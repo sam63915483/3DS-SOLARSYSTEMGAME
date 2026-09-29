@@ -66,7 +66,7 @@ void player_update(player *p, const world *w, const player_input *in, float dt) 
         v3 view = v3_norm(in->view_forward);
         if (in->thrust_fwd) { p->vel = v3_add(p->vel, v3_scale(view, THRUST * dt)); p->thrusting = 1; }
         if (in->thrust_up) { p->vel = v3_add(p->vel, v3_scale(p->up, THRUST * dt)); p->thrusting = 1; }
-        if (in->thrust_back) p->vel = v3_sub(p->vel, v3_scale(view, THRUST * dt));
+        if (in->thrust_down) p->vel = v3_sub(p->vel, v3_scale(p->up, THRUST * dt));
         if (in->brake) p->vel = v3_scale(p->vel, 1.0f - ease(BRAKE_RATE, dt));
         /* in the air the model follows the camera heading */
         move = v3_(0, 0, 0); mlen = 0;
