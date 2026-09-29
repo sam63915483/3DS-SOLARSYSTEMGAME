@@ -145,7 +145,8 @@ fragment lighting with the sun as the point light), `hud.c` is the citro2d botto
 `main.c` the loop.
 
 Controls on the ground: circle pad walks (camera relative, the player turns to face the
-direction), X jumps, L/R orbit the camera. In the air the game switches to flight controls:
+direction), X jumps, the D-pad looks around (left/right orbit, up/down pitch) and walking eases
+the camera back behind you. In the air the game switches to flight controls:
 X keeps thrusting up (away from gravity), B thrusts down (toward gravity), A boosts forward
 along the view, Y is an air brake, the circle pad is a free look with no limits (up/down
 pitches, left/right turns, so you can loop), L/R roll. SELECT respawns, START quits. To

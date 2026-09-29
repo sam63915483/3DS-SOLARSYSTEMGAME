@@ -104,6 +104,17 @@ int main(void) {
     CHECK(v3_len(v3_sub(c.pos, w.b[1].pos)) > w.b[1].radius, "camera is outside the planet");
     CHECK(v3_len(v3_sub(c.view, c.fwd)) < 1e-2f, "on the ground the view is level with the heading");
 
+    /* d-pad up pitches the ground camera, walking brings it back to level */
+    cin.turn = 0; cin.look_y = 1.0f;
+    for (int f = 0; f < 60; f++) { world_update(&w, DT); player_update(&p, &w, &in, DT); camera_update(&c, &w, &p, &cin, DT); }
+    CHECK(v3_dot(c.view, c.up) > 0.5f, "d-pad up tilts the ground camera up");
+    CHECK(p.grounded, "still grounded while looking around");
+    cin.look_y = 0; in.my = 1;
+    for (int f = 0; f < 90; f++) { world_update(&w, DT); player_update(&p, &w, &in, DT); camera_update(&c, &w, &p, &cin, DT); }
+    CHECK(fabsf(v3_dot(c.view, c.up)) < 0.1f, "walking eases the ground camera back to level");
+    in.my = 0;
+    for (int f = 0; f < 30; f++) { world_update(&w, DT); player_update(&p, &w, &in, DT); camera_update(&c, &w, &p, &cin, DT); }
+
     /* flight: the pad pitches the view without limit, A boosts along it */
     in.jump_pressed = 1; in.thrust_up = 1;
     world_update(&w, DT); player_update(&p, &w, &in, DT);

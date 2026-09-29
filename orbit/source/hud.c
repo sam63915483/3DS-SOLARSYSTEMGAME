@@ -51,7 +51,7 @@ void hud_draw(C3D_RenderTarget *bottom, const world *w, const player *p, float f
     C2D_DrawRectSolid(0, 160, 0, 320, 1, C2D_Color32(0x30, 0x34, 0x44, 0xFF));
     if (p->grounded) {
         text("Circle pad  walk      X  jump", 8, 166, 13, dim);
-        text("L / R  turn camera", 8, 182, 13, dim);
+        text("D-pad  look around (walk to reset)", 8, 182, 13, dim);
     } else {
         text("Circle pad  look      L / R  roll", 8, 166, 13, dim);
         text("X  thrust up         B  thrust down", 8, 182, 13, dim);
