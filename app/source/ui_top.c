@@ -71,7 +71,7 @@ static void draw_preset_page(App *a) {
         draw_text(txt, 26, y + 14, 11, selected ? RGB(0xff, 0xb3, 0x47) : (focused ? RGB(0xff, 0xff, 0xff) : RGB(0xc8, 0xc8, 0xd2)), ALIGN_LEFT);
         draw_text(INST_DESCS[i], 374, y + 14, 10, focused ? RGB(0xc8, 0xc8, 0xd2) : RGB(0x6a, 0x6a, 0x78), ALIGN_RIGHT);
     }
-    draw_text("▲▼ move   A select   B close", 200, 229, 10, RGB(0x4a, 0x4a, 0x56), ALIGN_CENTER);
+    draw_text("D-PAD move   A select   B close", 200, 229, 10, RGB(0x4a, 0x4a, 0x56), ALIGN_CENTER);
 }
 
 static void draw_fx_panel(App *a) {
@@ -108,7 +108,7 @@ static void draw_fx_panel(App *a) {
         fx_format_value(p, c->values[i], txt);
         draw_text(txt, 384, y, 11, focused ? RGB(0xff, 0xb3, 0x47) : RGB(0xc8, 0xc8, 0xd2), ALIGN_RIGHT);
     }
-    draw_text("▲▼ move   ◄► adjust   A select   B close", 200, 229, 10, RGB(0x4a, 0x4a, 0x56), ALIGN_CENTER);
+    draw_text("D-PAD up/down move   left/right adjust   A select   B close", 200, 229, 10, RGB(0x4a, 0x4a, 0x56), ALIGN_CENTER);
 }
 
 /* 16 Goertzel bins between 60 Hz and 6 kHz on the last mixer block: a cheap spectrum. */
