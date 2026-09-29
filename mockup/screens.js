@@ -2,11 +2,12 @@
 
 import { noteName } from './keyboard.js';
 import { WAVE_COLUMNS } from './sampler.js';
-import { drawTabBar, drawFxPanel, drawHeader, drawPresetPage, drawModesPage, TAB_BAR } from './fxui.js';
+import { drawTabBar, drawFxPanel, drawHeader, drawPresetPage, drawModesPage, currentMode, TAB_BAR } from './fxui.js';
 
 // Bottom-screen layout. Touch targets are kept >= 36px tall for a stylus/finger.
 export const BOTTOM = {
-  rec:   { x: 8,   y: 6,   w: 84,  h: 36 },
+  rec:   { x: 8,   y: 6,   w: 60,  h: 36 },
+  loop:  { x: 72,  y: 6,   w: 60,  h: 36 },
   minus: { x: 228, y: 6,   w: 40,  h: 36 },
   plus:  { x: 272, y: 6,   w: 40,  h: 36 },
   keys:  { x: 0,   y: 48,  w: 320, h: 156 },
@@ -57,6 +58,8 @@ export function drawBottom(g, state) {
   // Controls row.
   if (sampler.isRecording) button(g, BOTTOM.rec, '#c0392b', 'STOP', '#ffffff');
   else button(g, BOTTOM.rec, '#3a3a44', '● REC', '#ff6b5b');
+  const looping = currentMode(state.fx).loop;
+  button(g, BOTTOM.loop, looping ? '#1f4d2a' : '#3a3a44', 'LOOP', looping ? '#7ed957' : '#9a9aa6');
   button(g, BOTTOM.minus, '#3a3a44', '−', '#ffffff');
   button(g, BOTTOM.plus, '#3a3a44', '+', '#ffffff');
 

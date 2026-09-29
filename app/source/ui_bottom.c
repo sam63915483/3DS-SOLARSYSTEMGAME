@@ -5,7 +5,8 @@
 #include "platform_audio.h"
 #include "platform_mic.h"
 
-static const Rect R_REC   = {8, 6, 84, 36};
+static const Rect R_REC   = {8, 6, 60, 36};
+static const Rect R_LOOP  = {72, 6, 60, 36};
 static const Rect R_MINUS = {228, 6, 40, 36};
 static const Rect R_PLUS  = {272, 6, 40, 36};
 static const Rect R_KEYS  = {0, 48, 320, 156};
@@ -48,6 +49,11 @@ void ui_bottom_input(App *a) {
     touchPosition t; hidTouchRead(&t);
     if (down & KEY_TOUCH) {
         if (rect_contains(R_REC, t.px, t.py)) toggle_record(a);
+        else if (rect_contains(R_LOOP, t.px, t.py)) {
+            fxui_toggle_loop(&a->fxui);
+            audio_lock(); mixer_set_mode(&a->mixer, fxui_mode(&a->fxui)); audio_unlock();
+            app_compute_sample_peaks(a); a->heldMidi = -1;
+        }
         else if (rect_contains(R_MINUS, t.px, t.py)) kb_zoom_out(&a->kb);
         else if (rect_contains(R_PLUS, t.px, t.py)) kb_zoom_in(&a->kb);
         else if (rect_contains(R_TRACK, t.px, t.py)) {
@@ -75,6 +81,8 @@ void ui_bottom_draw(App *a) {
     draw_rect(0, 0, BOT_W, BOT_H, RGB(0x20, 0x20, 0x24));
     if (mic_is_recording()) button(R_REC, RGB(0xc0, 0x39, 0x2b), "STOP", RGB(0xff, 0xff, 0xff));
     else button(R_REC, RGB(0x3a, 0x3a, 0x44), "● REC", RGB(0xff, 0x6b, 0x5b));
+    int looping = a->mixer.mode.loop;
+    button(R_LOOP, looping ? RGB(0x1f, 0x4d, 0x2a) : RGB(0x3a, 0x3a, 0x44), "LOOP", looping ? RGB(0x7e, 0xd9, 0x57) : RGB(0x9a, 0x9a, 0xa6));
     button(R_MINUS, RGB(0x3a, 0x3a, 0x44), "-", RGB(0xff, 0xff, 0xff));   /* system font has no U+2212 */
     button(R_PLUS, RGB(0x3a, 0x3a, 0x44), "+", RGB(0xff, 0xff, 0xff));
 

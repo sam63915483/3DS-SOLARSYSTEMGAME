@@ -4,7 +4,7 @@
 import { KeyboardModel } from './keyboard.js';
 import { Sampler } from './sampler.js';
 import { drawTop, drawBottom, BOTTOM, hitRect, thumbRect } from './screens.js';
-import { createFxState, fxConfig, handleFxKey, currentMode } from './fxui.js';
+import { createFxState, fxConfig, handleFxKey, currentMode, toggleLoop } from './fxui.js';
 
 const shell = document.getElementById('shell');
 const topCanvas = document.getElementById('top');
@@ -77,6 +77,7 @@ bottomCanvas.addEventListener('pointerdown', (e) => {
   const p = toNative(e);
 
   if (hitRect(BOTTOM.rec, p)) { toggleRecord(); return; }
+  if (hitRect(BOTTOM.loop, p)) { toggleLoop(state.fx); onMode(); return; }
   if (hitRect(BOTTOM.minus, p)) { state.kb.zoomOut(); return; }
   if (hitRect(BOTTOM.plus, p)) { state.kb.zoomIn(); return; }
 
