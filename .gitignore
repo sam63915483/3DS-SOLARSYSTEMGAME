@@ -12,3 +12,12 @@ app/cia/romfs/
 tools/*.zip
 tools/bannertool/
 tools/makerom/
+orbit/build/
+orbit/*.3dsx
+orbit/*.smdh
+orbit/*.elf
+orbit/*.map
+orbit/*.cia
+orbit/cia/*.bnr
+orbit/cia/*.icn
+orbit/cia/romfs/

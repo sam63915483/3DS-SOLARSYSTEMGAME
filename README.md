@@ -124,3 +124,37 @@ Steps:
 4. Port `keyboard.js` to C first (pure logic), then the screens, then audio.
 5. On the console: install ftpd or use the SD card; copy `sk1.3dsx` to `/3ds/`, launch from the Homebrew Launcher.
 6. Later: wrap as a `.cia` so it appears on the Home Menu.
+
+## Orbit: solar system jetpack demo (`orbit/`)
+
+A second homebrew app, started 2026-09-29: a sun and three planets on circular orbits, a
+third-person player with a jetpack, real inverse-square gravity from every body, no loading.
+Design notes: `docs/superpowers/specs/2026-09-29-orbit-solar-system-design.md`.
+
+```
+C:\msys64\usr\bin\bash.exe -lc "source /etc/profile; cd /c/3ds/orbit && make"                      # orbit/orbit.3dsx
+C:\msys64\usr\bin\bash.exe -lc "cd /c/3ds/orbit && bash tests/run_tests.sh"                        # host tests of the sim
+C:\msys64\usr\bin\bash.exe -lc "source /etc/profile; cd /c/3ds/orbit && make && bash build_cia.sh" # orbit/orbit.cia
+node tools/send_to_fbi.js <3ds-ip> orbit/orbit.cia                                                   # install over Wi-Fi with FBI
+```
+
+Layout: `orbit/source/vec.h`, `world.c`, `player.c`, `camera.c`, `mesh.c` are portable C
+(orbits, gravity, player physics, chase camera, procedural meshes) tested by
+`orbit/tests/test_sim.c`. `render.c` is citro3d (vertex shader `vshader.v.pica`, PICA
+fragment lighting with the sun as the point light), `hud.c` is the citro2d bottom screen,
+`main.c` the loop.
+
+Controls: circle pad walks on the ground or thrusts sideways in the air (camera relative,
+the player turns to face the direction), B jumps and, held in the air, fires the jetpack
+upward, A thrusts downward, Y is an air brake, L/R orbit the camera, SELECT respawns,
+START quits. "Up" is always away from whichever body pulls hardest, so landing means
+pointing the camera at a planet, pushing forward, and using A/Y to slow down near the ground.
+
+Physics: the player's velocity is stored relative to the dominant body, so standing on a
+moving planet is exact. Switching dominant body converts the velocity so world velocity is
+continuous. Planet orbital speed is derived from the sun's gravity, so the sun's pull on the
+player in a planet's frame is only the tidal remainder. Touching the sun respawns you.
+
+Azahar notes: renders at 60 fps. The bottom-screen text shows as boxes in Azahar on this PC
+because the emulator has no dumped system font; on the console the text is the real font.
+Azahar keys: arrows = circle pad, S = B, A = A, X = Y, Q/W = L/R, N = SELECT, M = START.
