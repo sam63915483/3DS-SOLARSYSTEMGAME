@@ -9,6 +9,8 @@
 static u8 *micbuf;
 static u32 dataSize, readPos;
 static int ok, recording, parity, discard;
+static int live;                   /* 0 until the mic's write offset is seen moving */
+static u32 startOffset;            /* offset reported right after start (may be stale) */
 static u8 stage[2];
 static float rec[MAX_REC_SAMPLES];
 static int recLen, maxSamples = MAX_REC_SAMPLES;
@@ -36,10 +38,15 @@ int mic_start(float maxSeconds) {
     if (maxSamples < SR / 10) maxSamples = SR / 10;
     readPos = 0; recLen = 0; parity = 0; level = 0; discard = DISCARD_SAMPLES;
     memset(liveMin, 0, sizeof(liveMin)); memset(liveMax, 0, sizeof(liveMax));
+    memset(micbuf, 0, MICBUF_SIZE);   /* no stale audio from the previous take */
     MICU_SetPower(true);
     Result r = MICU_StartSampling(MICU_ENCODING_PCM16_SIGNED, MICU_SAMPLE_RATE_32730, 0, dataSize, true);
     if (R_FAILED(r)) { lastError = r; return 0; }
     lastError = 0;
+    /* The reported write offset can still be the previous take's until the mic really starts.
+     * Wait for it to move, then begin reading from where the new audio actually starts. */
+    startOffset = micGetLastSampleOffset();
+    live = 0;
     recording = 1;
     return 1;
 }
@@ -47,6 +54,11 @@ int mic_start(float maxSeconds) {
 void mic_pump(Mixer *m) {
     if (!recording) return;
     u32 pos = micGetLastSampleOffset();
+    if (!live) {
+        if (pos == startOffset) return;
+        live = 1;
+        readPos = pos < startOffset ? 0 : startOffset;   /* restarted from 0, or continued */
+    }
     double sq = 0; int n = 0;
     const float perCol = (float)maxSamples / WAVE_COLUMNS;
     while (readPos != pos) {

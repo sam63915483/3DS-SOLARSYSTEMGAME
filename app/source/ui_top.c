@@ -235,7 +235,7 @@ void ui_top_draw(App *a) {
             float secs = mic_seconds();
             float maxSecs = mic_max_seconds();
             draw_rect(p.x, p.y + p.h - 4, p.w * secs / maxSecs, 4, RGB(0xc0, 0x39, 0x2b));
-            snprintf(txt, sizeof txt, "● REC  %.1f s / %g s", secs, maxSecs);
+            snprintf(txt, sizeof txt, "● REC  %.1f s / %.1f s", secs, maxSecs);
             draw_text(txt, p.x + 8, p.y + 12, 12, RGB(0xff, 0x6b, 0x5b), ALIGN_LEFT);
             float level = mic_level() * 4; if (level > 1) level = 1;
             draw_rect(p.x + p.w - 88, p.y + 8, 80, 8, RGB(0x2c, 0x2d, 0x36));
