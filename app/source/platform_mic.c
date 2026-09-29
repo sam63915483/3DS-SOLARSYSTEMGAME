@@ -9,6 +9,8 @@
 static u8 *micbuf;
 static u32 dataSize, readPos;
 static int ok, recording, parity;
+static int discard;                /* samples to throw away after start: speaker tail + mute fade */
+#define DISCARD_SAMPLES (SR / 5)   /* 200 ms */
 static u8 stage[2];
 static float rec[MAX_REC_SAMPLES];
 static int recLen;
@@ -31,7 +33,7 @@ int mic_init(void) {
 
 int mic_start(void) {
     if (!ok || recording) return 0;
-    readPos = 0; recLen = 0; parity = 0; level = 0;
+    readPos = 0; recLen = 0; parity = 0; level = 0; discard = DISCARD_SAMPLES;
     memset(liveMin, 0, sizeof(liveMin)); memset(liveMax, 0, sizeof(liveMax));
     MICU_SetPower(true);
     Result r = MICU_StartSampling(MICU_ENCODING_PCM16_SIGNED, MICU_SAMPLE_RATE_32730, 0, dataSize, true);
@@ -52,6 +54,7 @@ void mic_pump(Mixer *m) {
         if (parity < 2) continue;
         parity = 0;
         s16 v = (s16)(stage[0] | (stage[1] << 8));
+        if (discard > 0) { discard--; continue; }   /* the speaker is still fading out */
         float f = v / 32768.0f;
         int c = (int)(recLen / perCol); if (c >= WAVE_COLUMNS) c = WAVE_COLUMNS - 1;
         if (f < liveMin[c]) liveMin[c] = f;

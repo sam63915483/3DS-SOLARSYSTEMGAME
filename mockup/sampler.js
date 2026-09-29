@@ -209,6 +209,7 @@ export class Sampler {
     const rec = {
       stream, source, sink, node: null,
       chunks: [], total: 0, maxSamples, level: 0,
+      discard: Math.round(ctx.sampleRate * DISCARD_MS / 1000),
       colsMin: new Float32Array(WAVE_COLUMNS),
       colsMax: new Float32Array(WAVE_COLUMNS),
     };
@@ -239,6 +240,12 @@ export class Sampler {
 
   // Appends a block of mic samples to the recording and updates the live waveform/level.
   _ingest(rec, input) {
+    if (rec.discard > 0) {   // the speaker is still fading out: don't let it into the sample
+      const skip = Math.min(rec.discard, input.length);
+      rec.discard -= skip;
+      input = input.subarray(skip);
+      if (input.length === 0) return;
+    }
     const take = Math.min(input.length, rec.maxSamples - rec.total);
     if (take <= 0) return;
     const chunk = input.slice(0, take);
@@ -278,7 +285,7 @@ export class Sampler {
     const rate = this.ctx.sampleRate;
     const [start, end] = trimRange(raw, rate);
     this.trimmedMs = Math.round(1000 * start / rate);
-    this.setSample(raw.subarray(start, end), rate, false);
+    this.setSample(normalize(raw.slice(start, end)), rate, false);
     this.instrument = 'sample'; // a fresh recording always becomes the active keyboard sound
   }
 
@@ -311,21 +318,49 @@ export class Sampler {
   }
 }
 
-const TRIM_THRESHOLD = 0.02;  // roughly -34 dBFS; anything quieter counts as silence
-const PRE_ROLL_MS = 5;        // keep a little audio before the first loud sample so attacks stay intact
-const TAIL_MS = 60;           // keep a short tail after the last loud sample
+// Trimming works on a 10 ms RMS envelope. The sound starts where the envelope first reaches
+// a level relative to the loudest moment (with an absolute floor so faint noise never counts)
+// and ends where it last stays above a lower "decay" level.
+const ABS_FLOOR = 0.04;       // RMS below this is always silence (about -28 dBFS)
+const START_REL = 0.15;       // start: within -16 dB of the loudest window
+const END_REL = 0.03;         // end: last window within -30 dB of the loudest
+const PRE_ROLL_MS = 10;       // keep a little audio before the start so attacks stay intact
+const TAIL_MS = 60;           // keep a short tail after the sound decays
+const NORMALIZE_PEAK = 0.9;
+const MAX_GAIN = 20;
+const DISCARD_MS = 200;       // mic input to throw away right after REC (speaker still fading)
 
-// Returns [start, end) sample indices with leading and trailing silence removed.
-// If nothing crosses the threshold the whole recording is kept.
+// Returns [start, end) sample indices around the recorded sound. Whole range if all quiet.
 export function trimRange(data, rate) {
-  let first = -1, last = -1;
-  for (let i = 0; i < data.length; i++) {
-    if (Math.abs(data[i]) >= TRIM_THRESHOLD) { if (first < 0) first = i; last = i; }
+  const win = Math.round(rate / 100);
+  const nw = Math.floor(data.length / win);
+  if (nw < 1) return [0, data.length];
+  const env = new Float32Array(nw);
+  let peak = 0;
+  for (let w = 0; w < nw; w++) {
+    let sq = 0;
+    for (let i = w * win; i < (w + 1) * win; i++) sq += data[i] * data[i];
+    env[w] = Math.sqrt(sq / win);
+    if (env[w] > peak) peak = env[w];
   }
-  if (first < 0) return [0, data.length];
-  const start = Math.max(0, first - Math.round(rate * PRE_ROLL_MS / 1000));
-  const end = Math.min(data.length, last + Math.round(rate * TAIL_MS / 1000));
+  if (peak < ABS_FLOOR) return [0, data.length];
+  const thrStart = Math.max(ABS_FLOOR, peak * START_REL);
+  const thrEnd = Math.max(ABS_FLOOR * 0.5, peak * END_REL);
+  let first = 0; while (first < nw && env[first] < thrStart) first++;
+  let last = nw - 1; while (last > first && env[last] < thrEnd) last--;
+  const start = Math.max(0, first * win - Math.round(rate * PRE_ROLL_MS / 1000));
+  const end = Math.min(data.length, (last + 1) * win + Math.round(rate * TAIL_MS / 1000));
   return [start, end];
+}
+
+// Scales the recording so its peak sits at NORMALIZE_PEAK (quiet recordings play at full level).
+export function normalize(data) {
+  let peak = 0;
+  for (let i = 0; i < data.length; i++) { const a = Math.abs(data[i]); if (a > peak) peak = a; }
+  if (peak < 1e-4) return data;
+  const gain = Math.min(MAX_GAIN, NORMALIZE_PEAK / peak);
+  for (let i = 0; i < data.length; i++) data[i] *= gain;
+  return data;
 }
 
 // The recorder processor: batches 128-frame render quanta into 1024-sample blocks and posts
