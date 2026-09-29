@@ -65,7 +65,7 @@ void render_init(const world *w) {
 
     for (int i = 0; i < BODY_COUNT; i++) {
         const body *b = &w->b[i];
-        int rings = i == BODY_SUN ? 32 : 24, segs = i == BODY_SUN ? 48 : 36;
+        int rings = 32, segs = 48;
         bodies[i] = upload(mesh_sphere(b->radius, rings, segs, b->color_a, b->color_b));
     }
     /* player: model +z is forward, +y is up, origin at the middle of the 1.8 tall body */

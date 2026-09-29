@@ -24,12 +24,13 @@ typedef struct {
     float mx, my;      /* circle pad while grounded, -1..1, my > 0 is forward */
     int jump_pressed;  /* X went down this frame */
     int thrust_fwd;    /* A held in the air: thrust along view_forward */
-    int thrust_up;     /* X held in the air: thrust away from gravity */
-    int thrust_down;   /* B held in the air: thrust toward gravity */
+    int thrust_up;     /* X held in the air: thrust along view_up */
+    int thrust_down;   /* B held in the air: thrust against view_up */
     int brake;         /* Y held in the air: bleed relative velocity */
     float roll;        /* -1..1 from L/R in the air, only drives the roll jets */
     v3 cam_forward;    /* camera heading, any length; walking is relative to it */
     v3 view_forward;   /* unit vector the camera looks along, including pitch */
+    v3 view_up;        /* unit vector up from the player as seen by the camera; up/down thrust follow it */
 } player_input;
 
 void player_spawn(player *p, const world *w, int body);

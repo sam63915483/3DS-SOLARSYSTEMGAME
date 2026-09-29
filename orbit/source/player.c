@@ -1,10 +1,10 @@
 #include "player.h"
 
-#define WALK_SPEED   5.5f
-#define JUMP_SPEED   8.0f
+#define WALK_SPEED   6.5f
+#define JUMP_SPEED   9.0f
 #define THRUST      28.0f
 #define BRAKE_RATE   2.5f
-#define MAX_SPEED   80.0f
+#define MAX_SPEED  150.0f
 #define GROUND_SNAP  0.5f
 
 void player_spawn(player *p, const world *w, int body) {
@@ -68,9 +68,10 @@ void player_update(player *p, const world *w, const player_input *in, float dt) 
         if (p->dom != BODY_SUN) g = v3_sub(g, world_gravity_from(w, BODY_SUN, dom->pos));
         p->vel = v3_add(p->vel, v3_scale(g, dt));
         v3 view = v3_norm(in->view_forward);
+        v3 vup = v3_len(in->view_up) > 1e-4f ? v3_norm(in->view_up) : p->up;
         if (in->thrust_fwd) { p->vel = v3_add(p->vel, v3_scale(view, THRUST * dt)); p->jet_fwd = 1; }
-        if (in->thrust_up) { p->vel = v3_add(p->vel, v3_scale(p->up, THRUST * dt)); p->jet_up = 1; }
-        if (in->thrust_down) { p->vel = v3_sub(p->vel, v3_scale(p->up, THRUST * dt)); p->jet_down = 1; }
+        if (in->thrust_up) { p->vel = v3_add(p->vel, v3_scale(vup, THRUST * dt)); p->jet_up = 1; }
+        if (in->thrust_down) { p->vel = v3_sub(p->vel, v3_scale(vup, THRUST * dt)); p->jet_down = 1; }
         p->jet_roll = in->roll;
         p->thrusting = p->jet_fwd || p->jet_up || p->jet_down || in->roll != 0;
         if (in->brake) p->vel = v3_scale(p->vel, 1.0f - ease(BRAKE_RATE, dt));

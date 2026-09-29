@@ -69,6 +69,7 @@ int main(void) {
         }
         in.cam_forward = cam.fwd;
         in.view_forward = cam.view;
+        in.view_up = cam.view_up;
         if (kDown & KEY_TOUCH) {
             touchPosition tp; hidTouchRead(&tp);
             if (hud_view_button_hit(tp.px, tp.py)) camera_toggle_view(&cam);

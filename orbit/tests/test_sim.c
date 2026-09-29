@@ -32,7 +32,7 @@ int main(void) {
 
     /* standing still on a moving planet: no drift for ten seconds */
     player p; player_spawn(&p, &w, BODY_START);
-    player_input in; memset(&in, 0, sizeof in); in.cam_forward = v3_(1, 0, 0); in.view_forward = v3_(1, 0, 0);
+    player_input in; memset(&in, 0, sizeof in); in.cam_forward = v3_(1, 0, 0); in.view_forward = v3_(1, 0, 0); in.view_up = p.up;
     v3 off0 = v3_sub(p.pos, w.b[BODY_START].pos);
     for (int f = 0; f < 600; f++) { world_update(&w, DT); player_update(&p, &w, &in, DT); }
     v3 off1 = v3_sub(p.pos, w.b[BODY_START].pos);
@@ -45,7 +45,7 @@ int main(void) {
     for (int f = 0; f < 120; f++) { world_update(&w, DT); player_update(&p, &w, &in, DT); }
     v3 off2 = v3_sub(p.pos, w.b[BODY_START].pos);
     float moved = v3_len(v3_sub(off2, off1));
-    CHECK(moved > 9.0f && moved < 12.0f, "walked about 11 units in two seconds");
+    CHECK(moved > 11.0f && moved < 14.0f, "walked about 13 units in two seconds");
     CHECK_NEAR(v3_len(off2), w.b[BODY_START].radius + PLAYER_HALF_HEIGHT, 1e-2f, "walking stays on the surface");
     CHECK(v3_dot(p.facing, p.up) < 1e-3f, "facing is tangent to the surface");
     in.my = 0;
@@ -116,7 +116,7 @@ int main(void) {
     for (int f = 0; f < 30; f++) { world_update(&w, DT); player_update(&p, &w, &in, DT); camera_update(&c, &w, &p, &cin, DT); }
 
     /* flight: the pad pitches the view without limit, A boosts along it */
-    in.jump_pressed = 1; in.thrust_up = 1;
+    in.jump_pressed = 1; in.thrust_up = 1; in.view_up = p.up;   /* constant thrust direction for the loop tests */
     world_update(&w, DT); player_update(&p, &w, &in, DT);
     in.jump_pressed = 0;
     cin.turn = 0; cin.look_y = 1.0f;
@@ -145,6 +145,30 @@ int main(void) {
     CHECK(v3_dot(v3_sub(p.vel, before), c.view) > 8.0f, "A boosts along the view direction");
     CHECK(p.thrusting, "flame shows while boosting");
     in.thrust_fwd = 0;
+
+    /* up thrust follows the player's orientation, not gravity: pitch to face the planet,
+       then X should push along the camera's up (tangent to the planet), not away from it */
+    if (p.grounded) {   /* the boost above may have put us back on Ember: climb first */
+        in.jump_pressed = 1; in.thrust_up = 1; in.view_up = p.up;
+        for (int f = 0; f < 120; f++) { world_update(&w, DT); player_update(&p, &w, &in, DT); camera_update(&c, &w, &p, &cin, DT); in.jump_pressed = 0; }
+        in.thrust_up = 0;
+    }
+    CHECK(!p.grounded, "airborne before the orientation thrust test");
+    c.view = v3_any_perp(p.up); c.view_up = p.up;   /* level the camera (the roll test banked it) */
+    cin.look_y = -1.0f;
+    for (int f = 0; f < 200; f++) {
+        world_update(&w, DT); player_update(&p, &w, &in, DT); camera_update(&c, &w, &p, &cin, DT);
+        if (v3_dot(c.view, p.up) < -0.95f) break;
+    }
+    cin.look_y = 0;
+    CHECK(v3_dot(c.view, p.up) < -0.9f, "pitched down to stare at the planet");
+    in.thrust_up = 1; in.view_up = c.view_up; in.view_forward = c.view;
+    before = p.vel;
+    for (int f = 0; f < 30; f++) { world_update(&w, DT); player_update(&p, &w, &in, DT); camera_update(&c, &w, &p, &cin, DT); in.view_up = c.view_up; in.view_forward = c.view; }
+    v3 dv = v3_sub(p.vel, before);
+    CHECK(v3_dot(dv, c.view_up) > 8.0f, "X thrusts along the player's own up while facing the planet");
+    CHECK(fabsf(v3_dot(v3_norm(dv), p.up)) < 0.5f, "that thrust is mostly sideways to gravity, not away from the planet");
+    in.thrust_up = 0;
 
     /* meshes: sphere normals are unit and winding faces outward */
     mesh s = mesh_sphere(5, 8, 12, 0xFF0000FF, 0x00FF00FF);

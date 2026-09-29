@@ -151,8 +151,8 @@ person with a smooth zoom into and out of the head. Text uses a built-in 5x7 pix
 Controls on the ground: circle pad walks (camera relative, the player turns to face the
 direction), X jumps, the D-pad looks around (left/right orbit, up/down pitch) and walking eases
 the camera back behind you. In the air the game switches to flight controls:
-X keeps thrusting up (away from gravity), B thrusts down (toward gravity), A boosts forward
-along the view, Y is an air brake, the circle pad is a free look with no limits (up/down
+X thrusts up and B thrusts down relative to your own body (the camera up), A boosts forward
+along the view, so all three follow your orientation, not the planet; Y is an air brake, the circle pad is a free look with no limits (up/down
 pitches, left/right turns, so you can loop), L/R roll. SELECT respawns, START quits. To
 reach another planet: jump and hold X to climb out, look at the target planet with the pad
 and hold A; near it turn around and hold A, or hold Y, to slow down before touching down. On landing the camera settles back to level.
