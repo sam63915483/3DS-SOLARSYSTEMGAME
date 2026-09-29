@@ -61,8 +61,14 @@ sample trim/loop, DSP helpers, the five effects, the six instruments, the mixer 
 D-pad menus. `app/source/*.c` is the thin 3DS layer (citro2d drawing, NDSP streaming,
 mic capture, input, main loop). `app/tests/` runs the core on the PC.
 
-Run on PC: Azahar emulator, File > Load File > `app/sk1.3dsx`. Set the microphone to
-"Real Device" under Emulation > Configure > Audio.
+Run on PC: Azahar emulator, File > Load File > `app/sk1.3dsx`. Two emulator details:
+- libctru refuses to start audio without `sdmc:/3ds/dspfirm.cdc`. Azahar doesn't need the
+  real file, so a 64 KB placeholder lives at `%APPDATA%\Azahar\sdmc\3ds\dspfirm.cdc`.
+- Under Emulation > Configure > Audio pick the microphone. On this PC only the OpenAL
+  real-device option delivers audio (`input_type=3` in `%APPDATA%\Azahar\config\qt-config.ini`,
+  with `input_device=Microphone Array (AMD Audio Device)`); the cubeb option (1) stays
+  silent and 2 is the static-noise generator. Verified 2026-09-29 by recording a speaker
+  beep: the app trimmed the silence and kept the 0.96 s beep.
 
 Run on the console (needs the Homebrew Launcher, both devices on the same Wi-Fi):
 1. Once only: the audio needs the DSP firmware dump. Run the **DSP1** homebrew on the
