@@ -155,7 +155,7 @@ export function drawPresetButton(g, state) {
   g.font = 'bold 11px sans-serif';
   g.textAlign = 'center';
   g.textBaseline = 'middle';
-  g.fillText('♪ ' + instrumentName(state.instrument), r.x + r.w / 2, r.y + r.h / 2 + 1);
+  g.fillText('♪ PRESET', r.x + r.w / 2, r.y + r.h / 2 + 1);
 }
 
 export function drawPresetPage(g, state) {

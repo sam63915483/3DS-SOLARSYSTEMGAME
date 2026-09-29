@@ -14,11 +14,15 @@ static float rec[MAX_REC_SAMPLES];
 static int recLen;
 static float liveMin[WAVE_COLUMNS], liveMax[WAVE_COLUMNS];
 static float level;
+static Result lastError;
+
+unsigned mic_last_error(void) { return (unsigned)lastError; }
 
 int mic_init(void) {
     micbuf = memalign(0x1000, MICBUF_SIZE);
     if (!micbuf) return 0;
-    if (R_FAILED(micInit(micbuf, MICBUF_SIZE))) { ok = 0; return 0; }
+    Result r = micInit(micbuf, MICBUF_SIZE);
+    if (R_FAILED(r)) { lastError = r; ok = 0; return 0; }
     dataSize = micGetSampleDataSize();
     MICU_SetGain(50);
     ok = 1;
@@ -30,7 +34,9 @@ int mic_start(void) {
     readPos = 0; recLen = 0; parity = 0; level = 0;
     memset(liveMin, 0, sizeof(liveMin)); memset(liveMax, 0, sizeof(liveMax));
     MICU_SetPower(true);
-    if (R_FAILED(MICU_StartSampling(MICU_ENCODING_PCM16_SIGNED, MICU_SAMPLE_RATE_32730, 0, dataSize, true))) return 0;
+    Result r = MICU_StartSampling(MICU_ENCODING_PCM16_SIGNED, MICU_SAMPLE_RATE_32730, 0, dataSize, true);
+    if (R_FAILED(r)) { lastError = r; return 0; }
+    lastError = 0;
     recording = 1;
     return 1;
 }

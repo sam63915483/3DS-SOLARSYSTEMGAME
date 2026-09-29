@@ -8,6 +8,7 @@ int   mic_start(void);             /* begins capturing; 0 on failure */
 void  mic_pump(Mixer *m);          /* call every frame; auto-stops at 10 s */
 void  mic_stop(Mixer *m);          /* ends capture and installs the sample */
 int   mic_is_recording(void);
+unsigned mic_last_error(void);     /* libctru Result of the last failed mic call, 0 if none */
 float mic_seconds(void);
 float mic_level(void);
 const float *mic_live_min(void);   /* WAVE_COLUMNS entries over the full 10 s width */

@@ -55,9 +55,8 @@ static void draw_tab_bar(App *a) {
 static void draw_preset_button(App *a) {
     FxUi *u = &a->fxui;
     int focused = u->onPresetButton && !u->open && !u->presetOpen;
-    char txt[32]; snprintf(txt, sizeof txt, "♪ %s", INST_NAMES[u->instrument]);
     draw_box(R_PRESET.x, R_PRESET.y, R_PRESET.w, R_PRESET.h, focused ? RGB(0x2c, 0x2d, 0x36) : RGB(0x15, 0x16, 0x1b), focused ? RGB(0xff, 0xb3, 0x47) : RGB(0x3a, 0x3a, 0x44), focused ? 2 : 1);
-    draw_text(txt, R_PRESET.x + R_PRESET.w / 2.0f, R_PRESET.y + R_PRESET.h / 2.0f + 1, 11, focused ? RGB(0xff, 0xff, 0xff) : RGB(0xc8, 0xc8, 0xd2), ALIGN_CENTER);
+    draw_text("♪ PRESET", R_PRESET.x + R_PRESET.w / 2.0f, R_PRESET.y + R_PRESET.h / 2.0f + 1, 11, focused ? RGB(0xff, 0xff, 0xff) : RGB(0xc8, 0xc8, 0xd2), ALIGN_CENTER);
 }
 
 static void draw_preset_page(App *a) {
@@ -188,13 +187,17 @@ void ui_top_draw(App *a) {
         } else {
             draw_peaks(p, a->peakMin, a->peakMax, RGB(0xff, 0xb3, 0x47));
             const Sample *s = &a->mixer.sample;
-            if (s->trimmedMs) snprintf(txt, sizeof txt, "YOUR SAMPLE  %.2f s   (trimmed %d ms of silence)", (float)s->length / SR, s->trimmedMs);
-            else snprintf(txt, sizeof txt, "YOUR SAMPLE  %.2f s", (float)s->length / SR);
+            const char *label = s->isBuiltIn ? "BUILT-IN TONE" : "YOUR SAMPLE";
+            if (s->trimmedMs) snprintf(txt, sizeof txt, "%s  %.2f s   (trimmed %d ms of silence)", label, (float)s->length / SR, s->trimmedMs);
+            else snprintf(txt, sizeof txt, "%s  %.2f s", label, (float)s->length / SR);
             draw_text(txt, p.x + 8, p.y + 12, 11, RGB(0x8a, 0x8a, 0x96), ALIGN_LEFT);
             draw_text("PLAY A KEY FOR THE SCOPE", p.x + p.w - 8, p.y + p.h - 12, 11, RGB(0x6a, 0x6a, 0x78), ALIGN_RIGHT);
         }
         draw_tab_bar(a); draw_preset_button(a);
     }
     if (!a->dspOk) draw_text("NO DSP FIRMWARE: run the DSP1 homebrew once, then restart", 16, TAB_Y - 12, 11, RGB(0xff, 0x3b, 0x3b), ALIGN_LEFT);
-    else if (!a->micOk) draw_text("MIC UNAVAILABLE", 16, TAB_Y - 12, 11, RGB(0xff, 0x3b, 0x3b), ALIGN_LEFT);
+    else if (!a->micOk || mic_last_error()) {
+        char err[48]; snprintf(err, sizeof err, "MIC %s: 0x%08X", a->micOk ? "START FAILED" : "UNAVAILABLE", mic_last_error());
+        draw_text(err, 16, TAB_Y - 12, 11, RGB(0xff, 0x3b, 0x3b), ALIGN_LEFT);
+    }
 }
