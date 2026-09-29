@@ -46,7 +46,38 @@ Code map:
 - `screens.js` draws both screens at native resolution.
 - `app.js` pointer handling, button mapping, and the render loop.
 
-## Phase 2: 3DS homebrew port (plan)
+## Phase 2: 3DS homebrew port (`app/`)
+
+Toolchain installed 2026-09-29 through MSYS2 (`C:\msys64`): devkitARM, libctru, citro2d,
+3dslink, plus a host gcc for tests. Everything runs from an MSYS2 shell:
+
+```
+C:\msys64\usr\bin\bash.exe -lc "source /etc/profile; cd /c/3ds/app && make"        # builds app/sk1.3dsx
+C:\msys64\usr\bin\bash.exe -lc "cd /c/3ds/app && bash tests/run_tests.sh"          # host unit tests
+```
+
+Layout: `app/source/core/` is portable C (no 3DS headers) covering the keyboard model,
+sample trim/loop, DSP helpers, the five effects, the six instruments, the mixer and the
+D-pad menus. `app/source/*.c` is the thin 3DS layer (citro2d drawing, NDSP streaming,
+mic capture, input, main loop). `app/tests/` runs the core on the PC.
+
+Run on PC: Azahar emulator, File > Load File > `app/sk1.3dsx`. Set the microphone to
+"Real Device" under Emulation > Configure > Audio.
+
+Run on the console (needs the Homebrew Launcher, both devices on the same Wi-Fi):
+1. Once only: the audio needs the DSP firmware dump. Run the **DSP1** homebrew on the
+   console once; it writes `sdmc:/3ds/dspfirm.cdc`. Without it the app shows a red
+   message and stays silent.
+2. Open the Homebrew Launcher, press **Y** (netloader); it shows the console's IP.
+3. On the PC: `C:\msys64\usr\bin\bash.exe -lc "source /etc/profile; 3dslink -a <ip> /c/3ds/app/sk1.3dsx"`
+   The app starts on the console immediately. To keep it on the SD card instead, copy
+   `sk1.3dsx` to `sdmc:/3ds/sk1/sk1.3dsx` (with ftpd or the card in a PC reader).
+
+Controls on the console: touch = keys / REC / zoom / slider, D-pad + A/B = effects and
+keyboard preset menus, circle pad = pitch bend (up/down) and filter sweep (left/right),
+START = quit to the launcher.
+
+## Port notes (kept from the plan)
 
 Toolchain: devkitPro (devkitARM + libctru + citro2d/citro3d). Output is a `.3dsx`
 run from the Homebrew Launcher on the modded console.
