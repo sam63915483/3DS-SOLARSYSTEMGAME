@@ -177,24 +177,41 @@ mesh mesh_props(const world *w, int bi) {
     const body *b = &w->b[bi];
     prop_plan plan = plan_for(b->terrain);
     mesh m = { 0, 0, 0, 0 };
-    int cap = plan.trees * 200 + plan.rocks * 130 + plan.shards * 80;
+    int cap = plan.trees * 200 + plan.rocks * 130 + plan.shards * 80 + (plan.trees ? 500 * 9 : 0);
     if (cap == 0) return m;
     m.v = calloc(cap, sizeof(vertex));
 
-    int want[3] = { plan.trees, plan.rocks, plan.shards };
+    int want[4] = { plan.trees, plan.rocks, plan.shards, plan.trees ? 500 : 0 };
     uint32_t seed = b->seed * 7919u + 3u;
     int k = 0;
-    for (int kind = 0; kind < 3; kind++) {
+    /* trees grow in groves: pick a few centres, then scatter most trees around them */
+    v3 grove[40];
+    for (int g = 0; g < 40; g++) {
+        v3 d = v3_(noise_hashf(g, 7, 9, seed) * 2 - 1, noise_hashf(g, 8, 9, seed) * 2 - 1, noise_hashf(g, 9, 9, seed) * 2 - 1);
+        grove[g] = v3_len(d) > 0.05f ? v3_norm(d) : v3_(0, 1, 0);
+    }
+    for (int kind = 0; kind < 4; kind++) {
         int placed = 0, guard = 0;
-        while (placed < want[kind] && guard++ < 20000) {
+        while (placed < want[kind] && guard++ < 40000) {
             k++;
-            v3 dir = v3_(noise_hashf(k, 0, kind, seed) * 2 - 1, noise_hashf(k, 1, kind, seed) * 2 - 1, noise_hashf(k, 2, kind, seed) * 2 - 1);
-            float l = v3_len(dir);
-            if (l > 1 || l < 0.1f) continue;
-            dir = v3_scale(dir, 1.0f / l);
+            v3 dir;
+            if (kind == 0 && noise_hashf(k, 20, kind, seed) < 0.75f) {
+                /* near a grove centre: offset a few degrees along two tangents */
+                v3 g = grove[noise_hash(k, 21, kind, seed) % 40];
+                v3 t1 = v3_any_perp(g), t2 = v3_cross(g, t1);
+                float spread = 14.0f / b->radius;   /* about 14 units */
+                dir = v3_norm(v3_add(g, v3_add(v3_scale(t1, (noise_hashf(k, 22, kind, seed) - 0.5f) * 2 * spread),
+                                               v3_scale(t2, (noise_hashf(k, 23, kind, seed) - 0.5f) * 2 * spread))));
+            } else {
+                dir = v3_(noise_hashf(k, 0, kind, seed) * 2 - 1, noise_hashf(k, 1, kind, seed) * 2 - 1, noise_hashf(k, 2, kind, seed) * 2 - 1);
+                float l = v3_len(dir);
+                if (l > 1 || l < 0.1f) continue;
+                dir = v3_scale(dir, 1.0f / l);
+            }
             float raw = world_height_raw(w, bi, dir);
             float t = b->amp > 0 ? raw / b->amp : 0;
             if (kind == 0 && (t < 0.08f || t > 0.8f)) continue;   /* trees: not beach, not snow */
+            if (kind == 3 && (t < 0.07f || t > 0.6f)) continue;   /* grass: on grass */
             if (kind != 0 && b->has_sea && raw < 0.02f) continue;  /* nothing on water */
 
             /* local frame, rotated by a random angle for variety */
@@ -226,6 +243,17 @@ mesh mesh_props(const world *w, int bi) {
                 float tone = 0.85f + noise_hashf(k, 9, kind, seed) * 0.3f;
                 emit_blob(&m, v3_add(base, v3_scale(up, ry * 0.35f)), t1, up, t2, rx, ry, rz, 0.28f,
                           shade(plan.rock_a, tone), shade(plan.rock_b, tone), pseed);
+            } else if (kind == 3) {
+                /* grass tuft: three thin blades fanned out, 9 vertices */
+                uint32_t gc = shade(0x4E9E3CFF, 0.75f + noise_hashf(k, 6, kind, seed) * 0.35f);
+                for (int c = 0; c < 3; c++) {
+                    float a = c * 2.094f + noise_hashf(k, 7 + c, kind, seed);
+                    v3 side = v3_add(v3_scale(t1, cosf(a)), v3_scale(t2, sinf(a)));
+                    float h = (0.5f + noise_hashf(k, 10 + c, kind, seed) * 0.5f) * s;
+                    v3 foot = v3_add(base, v3_scale(side, 0.15f * s));
+                    emit_tri(&m, v3_sub(foot, v3_scale(side, 0.12f * s)), v3_add(foot, v3_scale(side, 0.12f * s)),
+                             v3_add(v3_add(foot, v3_scale(up, h)), v3_scale(side, 0.25f * s)), v3_sub(base, up), gc);
+                }
             } else {
                 /* a cluster of three tilted shards */
                 for (int c = 0; c < 3; c++) {

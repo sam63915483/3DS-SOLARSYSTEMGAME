@@ -163,6 +163,16 @@ moving planet is exact. Switching dominant body converts the velocity so world v
 continuous. Planet orbital speed is derived from the sun's gravity, so the sun's pull on the
 player in a planet's frame is only the tidal remainder. Touching the sun respawns you.
 
+World: sun radius 100; planets radius 80/128/96 on orbits 320/620/940. Each planet has
+procedural terrain (a value-noise height field over the sphere in `world.c`, shared by
+rendering and collision, with a flattened sea on Verdant and Frost) and biome vertex colours.
+Props are built once per planet in `mesh.c`: on Verdant conifers and round trees in groves,
+grass tufts and boulders; on Ember big boulders; on Frost ice shard clusters and rocks. They
+are flat shaded and skipped once a planet is more than 700 units away. Planet meshes are
+indexed. The astronaut is an articulated model (`mesh_astronaut`) with a walk cycle and a
+two-tank jetpack; flames are two-tone cones, and the air brake fires one along the direction
+of travel.
+
 Azahar notes: renders at 60 fps. Note for anyone mixing citro3d and citro2d: the 3D pass
 sets an opaque blend mode and citro2d does not restore it, so re-enable alpha blending
 before the 2D pass or every glyph and sprite draws as a solid block.
