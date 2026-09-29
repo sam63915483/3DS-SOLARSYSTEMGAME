@@ -10,6 +10,7 @@ export { trimRange, normalize, makeLoopable } from './sample.js';
 export const ROOT_MIDI = 60;      // C4 plays the sample at its recorded pitch
 export const WAVE_COLUMNS = 368;  // waveform resolution on the top screen
 const DISCARD_MS = 200;           // mic input to throw away right after REC (speaker still fading)
+const TRIGGER_RMS = 0.04;         // armed recording starts when a 10 ms window crosses this
 
 export class Sampler {
   constructor() {
@@ -231,6 +232,7 @@ export class Sampler {
       stream, source, sink, node: null,
       chunks: [], total: 0, maxSamples, level: 0,
       discard: Math.round(ctx.sampleRate * DISCARD_MS / 1000),
+      armed: true, pre: new Float32Array(Math.round(ctx.sampleRate / 100)), preW: 0, preN: 0, preSq: 0, armedFor: 0,
       colsMin: new Float32Array(WAVE_COLUMNS),
       colsMax: new Float32Array(WAVE_COLUMNS),
     };
@@ -259,12 +261,36 @@ export class Sampler {
     this.rec = rec;
   }
 
+  get isArmed() { return this.rec !== null && this.rec.armed; }
+
   // Appends a block of mic samples to the recording and updates the live waveform/level.
+  // While armed, it waits for the input to cross the trim floor (10 ms RMS) before the
+  // length window starts, keeping those 10 ms as pre-roll so the attack is intact.
   _ingest(rec, input) {
     if (rec.discard > 0) {   // the speaker is still fading out: don't let it into the sample
       const skip = Math.min(rec.discard, input.length);
       rec.discard -= skip;
       input = input.subarray(skip);
+      if (input.length === 0) return;
+    }
+    if (rec.armed) {
+      const n = rec.pre.length;
+      let i = 0;
+      for (; i < input.length; i++) {
+        const s = input[i];
+        if (rec.preN === n) rec.preSq -= rec.pre[rec.preW] * rec.pre[rec.preW];
+        rec.pre[rec.preW] = s; rec.preW = (rec.preW + 1) % n; if (rec.preN < n) rec.preN++;
+        rec.preSq = Math.max(0, rec.preSq + s * s);
+        rec.level = Math.sqrt(rec.preSq / rec.preN);
+        if (++rec.armedFor > this.ctx.sampleRate * 15) { this.stopRecording(); return; }
+        if (rec.preN === n && rec.level >= TRIGGER_RMS) break;
+      }
+      if (i === input.length) return;   // still waiting
+      rec.armed = false;
+      const preroll = new Float32Array(n);
+      for (let k = 0; k < n; k++) preroll[k] = rec.pre[(rec.preW + k) % n];
+      this._ingest(rec, preroll);
+      input = input.subarray(i + 1);
       if (input.length === 0) return;
     }
     const take = Math.min(input.length, rec.maxSamples - rec.total);

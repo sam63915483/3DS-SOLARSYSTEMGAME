@@ -185,7 +185,12 @@ export function drawTop(g, state) {
     g.font = 'bold 12px sans-serif';
     g.textAlign = 'left';
     g.textBaseline = 'alphabetic';
-    g.fillText(`● REC  ${secs.toFixed(1)} s / ${maxSecs} s`, p.x + 8, p.y + 16);
+    if (sampler.isArmed) {
+      g.fillStyle = '#ffb347';
+      g.fillText(`● ARMED  make a sound to start the ${maxSecs} s window`, p.x + 8, p.y + 16);
+    } else {
+      g.fillText(`● REC  ${secs.toFixed(1)} s / ${maxSecs} s`, p.x + 8, p.y + 16);
+    }
     // Input level meter.
     const level = Math.min(1, sampler.inputLevel * 4);
     g.fillStyle = '#2c2d36';

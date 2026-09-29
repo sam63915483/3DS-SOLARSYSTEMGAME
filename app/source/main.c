@@ -25,9 +25,12 @@ static void handle_buttons(void) {
         if (!press) continue;
         int changed;
         int r = fxui_key(&app.fxui, i, repeat, &changed);
+        audio_lock();
         if (r & FXUI_CHANGED_FX) mixer_apply_fx(&app.mixer, changed, &app.fxui.cfg[changed]);
         if (r & FXUI_CHANGED_INST) mixer_set_instrument(&app.mixer, app.fxui.instrument);
-        if (r & FXUI_CHANGED_MODE) { mixer_set_mode(&app.mixer, fxui_mode(&app.fxui)); app_compute_sample_peaks(&app); app.heldMidi = -1; }
+        if (r & FXUI_CHANGED_MODE) { mixer_set_mode(&app.mixer, fxui_mode(&app.fxui)); app.heldMidi = -1; }
+        audio_unlock();
+        if (r & FXUI_CHANGED_MODE) app_compute_sample_peaks(&app);
     }
 }
 
@@ -39,7 +42,7 @@ static void handle_circle_pad(void) {
     if (x > -0.15f && x < 0.15f) x = 0;
     if (y > -0.15f && y < 0.15f) y = 0;
     static float lx = 0, ly = 0;
-    if (x != lx || y != ly) { mixer_set_pad(&app.mixer, x, y); lx = x; ly = y; }
+    if (x != lx || y != ly) { audio_lock(); mixer_set_pad(&app.mixer, x, y); audio_unlock(); lx = x; ly = y; }
 }
 
 int main(void) {
@@ -59,7 +62,7 @@ int main(void) {
     app.topMode = TOP_SCOPE;
     app_compute_sample_peaks(&app);
     mixer_set_mode(&app.mixer, fxui_mode(&app.fxui));
-    app.dspOk = audio_init();
+    app.dspOk = audio_init(&app.mixer);
     app.micOk = mic_init();
 
     while (aptMainLoop()) {
@@ -75,14 +78,14 @@ int main(void) {
         if (mic_is_recording()) app.topMode = TOP_RECORDING;
         else if (wasRecording || app.topMode == TOP_RECORDING) {
             /* recording just ended (STOP or the 10 s cap) */
+            audio_lock();
             mixer_set_muted(&app.mixer, 0);
             app.fxui.instrument = INST_SAMPLE;
             mixer_set_instrument(&app.mixer, INST_SAMPLE);
+            audio_unlock();
             app_compute_sample_peaks(&app);
             app.topMode = TOP_SAMPLE;
         }
-
-        audio_pump(&app.mixer);
 
         C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
         draw_frame_begin();
@@ -93,8 +96,6 @@ int main(void) {
         C2D_SceneBegin(bot);
         ui_bottom_draw(&app);
         C3D_FrameEnd(0);
-
-        audio_pump(&app.mixer);   /* twice per frame keeps the queue full even on slow frames */
     }
 
     mic_exit();

@@ -24,7 +24,7 @@ typedef struct {
     FxState fx;
     float master, masterTarget; /* 0 while recording */
     /* for the visualizer: the last rendered mono block, its RMS, and the held note */
-    float scope[BLOCK]; float scopeRms; int scopeMidi;
+    float scope[BLOCK]; int scopeLen; float scopeRms; int scopeMidi;
     int nanResets;
 } Mixer;
 

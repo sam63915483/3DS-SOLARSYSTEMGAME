@@ -20,6 +20,7 @@ void mixer_init(Mixer *m) {
     fx_init(&m->fx);
     m->master = m->masterTarget = 1.0f;
     m->scopeMidi = -1;
+    m->scopeLen = BLOCK;
 }
 
 static int find_slot(Mixer *m) {
@@ -109,6 +110,7 @@ void mixer_render(Mixer *m, short *out, int n) {
         m->padLow.lp = m->padLow.bp = m->padHigh.lp = m->padHigh.bp = 0;
         memset(out, 0, n * 2 * sizeof(short)); m->nanResets++; m->scopeRms = 0; return;
     }
+    m->scopeLen = n;
     m->scopeRms = (float)sqrt(sq / n);
     m->scopeMidi = m->held >= 0 ? m->voices[m->held].midi : -1;
 

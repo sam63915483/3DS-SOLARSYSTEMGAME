@@ -8,6 +8,7 @@ int   mic_start(float maxSeconds); /* begins capturing; 0 on failure */
 void  mic_pump(Mixer *m);          /* call every frame; auto-stops at the length cap */
 void  mic_stop(Mixer *m);          /* ends capture and installs the sample */
 int   mic_is_recording(void);
+int   mic_is_armed(void);          /* recording but still waiting for a sound to start the window */
 unsigned mic_last_error(void);     /* libctru Result of the last failed mic call, 0 if none */
 float mic_seconds(void);
 float mic_max_seconds(void);

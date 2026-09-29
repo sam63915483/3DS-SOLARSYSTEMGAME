@@ -68,7 +68,7 @@ void voice_note_on(Voice *v, int instrument, int midi, const Sample *sample, con
         add_osc(v, 1, f, -9, 0.22f); add_osc(v, 1, f, 9, 0.22f); add_osc(v, 3, f, 0, 0.22f); add_osc(v, 0, f / 2, 0, 0.11f);
         svf_set(&v->f1, 400, 1.2f); v->cutStart = 400; v->cutEnd = 2400; v->cutTime = 0.8f;
         lfo_set(&v->lfo1, 0.35f);
-        env_setup(v, 0.5f, 1.6f, 0.45f);
+        env_setup(v, 0.2f, 1.6f, 0.45f);
         break;
     case INST_BELLS:
         add_osc(v, 0, f, 0, 1.0f);            /* carrier */
@@ -82,7 +82,7 @@ void voice_note_on(Voice *v, int instrument, int midi, const Sample *sample, con
         add_osc(v, 3, f, -5, 0.4f); add_osc(v, 3, f, 5, 0.4f); add_osc(v, 1, f, 0, 0.12f);
         svf_set(&v->f1, 700, 6); svf_set(&v->f2, 1200, 6); svf_set(&v->f3, 900, 0.7f);
         lfo_set(&v->lfo1, 0.18f); lfo_set(&v->lfo2, 0.23f); lfo_set(&v->lfo3, 5.0f);
-        env_setup(v, 0.9f, 2.2f, 0.9f);
+        env_setup(v, 0.35f, 2.2f, 0.9f);
         break;
     case INST_SUPERSAW: {
         static const float det[7] = {-36, -24, -12, 0, 12, 24, 36};

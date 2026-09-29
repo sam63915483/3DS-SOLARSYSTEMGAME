@@ -184,8 +184,9 @@ static void draw_scope(App *a) {
     float loud = rms * 3; if (loud > 1) loud = 1;
     int active = rms > 0.003f;
 
+    int len = m->scopeLen > 0 ? m->scopeLen : BLOCK;
     if (active) {
-        float bins[16]; spectrum(m->scope, BLOCK, bins, 16);
+        float bins[16]; spectrum(m->scope, len, bins, 16);
         float bw = TOP_W / 16.0f;
         for (int b = 0; b < 16; b++) {
             float h = bins[b] * 4 * 100; if (h > 100) h = 100; if (h < 1) continue;
@@ -198,7 +199,7 @@ static void draw_scope(App *a) {
     float px = 0, py = 0;
     for (int i = 0; i <= N; i++) {
         float ang = (float)i / N * 2 * 3.14159265f - 3.14159265f / 2;
-        float s = active ? m->scope[(i % N) * BLOCK / N] : 0;
+        float s = active ? m->scope[(i % N) * len / N] : 0;
         float r = baseR + s * 60;
         float x = CX + cosf(ang) * r, y = CY + sinf(ang) * r;
         if (i) draw_line(px, py, x, y, 1.5f, ring);
@@ -208,7 +209,7 @@ static void draw_scope(App *a) {
     if (active) {
         const int STEP = 4;
         for (int x = STEP; x < TOP_W; x += STEP) {
-            float y0 = CY - m->scope[(x - STEP) * BLOCK / TOP_W] * 90, y1 = CY - m->scope[x * BLOCK / TOP_W] * 90;
+            float y0 = CY - m->scope[(x - STEP) * len / TOP_W] * 90, y1 = CY - m->scope[x * len / TOP_W] * 90;
             draw_line(x - STEP, y0, x, y1, 2, trace);
         }
     } else draw_line(0, CY, TOP_W, CY, 2, trace);
@@ -235,8 +236,13 @@ void ui_top_draw(App *a) {
             float secs = mic_seconds();
             float maxSecs = mic_max_seconds();
             draw_rect(p.x, p.y + p.h - 4, p.w * secs / maxSecs, 4, RGB(0xc0, 0x39, 0x2b));
-            snprintf(txt, sizeof txt, "● REC  %.1f s / %.1f s", secs, maxSecs);
-            draw_text(txt, p.x + 8, p.y + 12, 12, RGB(0xff, 0x6b, 0x5b), ALIGN_LEFT);
+            if (mic_is_armed()) {
+                snprintf(txt, sizeof txt, "● ARMED  make a sound to start the %.1f s window", maxSecs);
+                draw_text(txt, p.x + 8, p.y + 12, 12, RGB(0xff, 0xb3, 0x47), ALIGN_LEFT);
+            } else {
+                snprintf(txt, sizeof txt, "● REC  %.1f s / %.1f s", secs, maxSecs);
+                draw_text(txt, p.x + 8, p.y + 12, 12, RGB(0xff, 0x6b, 0x5b), ALIGN_LEFT);
+            }
             float level = mic_level() * 4; if (level > 1) level = 1;
             draw_rect(p.x + p.w - 88, p.y + 8, 80, 8, RGB(0x2c, 0x2d, 0x36));
             draw_rect(p.x + p.w - 88, p.y + 8, 80 * level, 8, level > 0.9f ? RGB(0xff, 0x3b, 0x3b) : RGB(0x7e, 0xd9, 0x57));

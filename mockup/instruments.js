@@ -103,7 +103,7 @@ class VoiceBuilder {
 
 // Ethereal 1: detuned saws + triangle + sub, filter opens slowly, gentle vibrato.
 function dreamPad(ctx, freq, midi, dest) {
-  const v = new VoiceBuilder(ctx, midi, dest, { attack: 0.5, release: 1.6, peak: 0.45 });
+  const v = new VoiceBuilder(ctx, midi, dest, { attack: 0.2, release: 1.6, peak: 0.45 });
   const mix = v.gain(0.22);
   v.osc('sawtooth', freq, -9).connect(mix);
   v.osc('sawtooth', freq, 9).connect(mix);
@@ -143,7 +143,7 @@ function glassBells(ctx, freq, midi, dest) {
 
 // Ethereal 3: two triangles through vowel-like band-pass filters that drift with an LFO.
 function aurora(ctx, freq, midi, dest) {
-  const v = new VoiceBuilder(ctx, midi, dest, { attack: 0.9, release: 2.2, peak: 0.9 });
+  const v = new VoiceBuilder(ctx, midi, dest, { attack: 0.35, release: 2.2, peak: 0.9 });
   const src = v.gain(0.4);
   v.osc('triangle', freq, -5).connect(src);
   v.osc('triangle', freq, 5).connect(src);

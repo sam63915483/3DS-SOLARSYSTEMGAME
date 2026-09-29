@@ -2,6 +2,7 @@
 #include <3ds.h>
 #include "ui_bottom.h"
 #include "draw.h"
+#include "platform_audio.h"
 #include "platform_mic.h"
 
 static const Rect R_REC   = {8, 6, 84, 36};
@@ -27,16 +28,19 @@ static void slider_to(App *a, int px) {
 
 static void press_at(App *a, int px, int py) {
     int midi = kb_hit(&a->kb, R_KEYS, px, py);
-    if (midi < 0) { if (a->heldMidi >= 0) { a->heldMidi = -1; mixer_note_off(&a->mixer); } return; }
+    if (midi < 0) { if (a->heldMidi >= 0) { a->heldMidi = -1; audio_lock(); mixer_note_off(&a->mixer); audio_unlock(); } return; }
     if (midi == a->heldMidi) return;
     a->heldMidi = midi;
-    mixer_note_on(&a->mixer, midi);
+    audio_lock(); mixer_note_on(&a->mixer, midi); audio_unlock();
     if (!mic_is_recording()) a->topMode = TOP_SCOPE;
 }
 
 static void toggle_record(App *a) {
-    if (mic_is_recording()) { mic_stop(&a->mixer); mixer_set_muted(&a->mixer, 0); }
-    else if (a->micOk) { mixer_set_muted(&a->mixer, 1); if (!mic_start(a->mixer.mode.seconds)) mixer_set_muted(&a->mixer, 0); }
+    if (mic_is_recording()) { mic_stop(&a->mixer); audio_lock(); mixer_set_muted(&a->mixer, 0); audio_unlock(); }
+    else if (a->micOk) {
+        audio_lock(); mixer_set_muted(&a->mixer, 1); audio_unlock();
+        if (!mic_start(a->mixer.mode.seconds)) { audio_lock(); mixer_set_muted(&a->mixer, 0); audio_unlock(); }
+    }
 }
 
 void ui_bottom_input(App *a) {
@@ -56,7 +60,7 @@ void ui_bottom_input(App *a) {
         else if (a->drag == 2) slider_to(a, t.px);
     }
     if (up & KEY_TOUCH) {
-        if (a->drag == 1 && a->heldMidi >= 0) { a->heldMidi = -1; mixer_note_off(&a->mixer); }
+        if (a->drag == 1 && a->heldMidi >= 0) { a->heldMidi = -1; audio_lock(); mixer_note_off(&a->mixer); audio_unlock(); }
         a->drag = 0;
     }
 }
