@@ -28,7 +28,7 @@ int main(void) {
     v3 g = world_gravity_at(&w, above);
     CHECK(g.y < 0, "gravity above the start planet points down");
     CHECK(world_dominant(&w, above) == BODY_START, "start planet dominates near its surface");
-    CHECK(world_dominant(&w, v3_(0, 0, 100)) == BODY_SUN, "sun dominates deep space");
+    CHECK(world_dominant(&w, v3_(0, 0, 150)) == BODY_SUN, "sun dominates near the sun");
 
     /* standing still on a moving planet: no drift for ten seconds */
     player p; player_spawn(&p, &w, BODY_START);
@@ -45,7 +45,7 @@ int main(void) {
     for (int f = 0; f < 120; f++) { world_update(&w, DT); player_update(&p, &w, &in, DT); }
     v3 off2 = v3_sub(p.pos, w.b[BODY_START].pos);
     float moved = v3_len(v3_sub(off2, off1));
-    CHECK(moved > 11.0f && moved < 14.0f, "walked about 13 units in two seconds");
+    CHECK(moved > 14.0f && moved < 18.0f, "walked about 16 units in two seconds");
     CHECK_NEAR(v3_len(off2), w.b[BODY_START].radius + PLAYER_HALF_HEIGHT, 1e-2f, "walking stays on the surface");
     CHECK(v3_dot(p.facing, p.up) < 1e-3f, "facing is tangent to the surface");
     in.my = 0;
@@ -86,7 +86,7 @@ int main(void) {
     in.thrust_up = 0;
 
     /* respawn when hitting the sun */
-    p.pos = v3_(0, 0, 71.5f); p.vel = v3_(0, 0, -80);
+    p.pos = v3_(0, 0, 101.5f); p.vel = v3_(0, 0, -150);
     world_update(&w, DT); player_update(&p, &w, &in, DT);
     CHECK(p.dom == BODY_START && p.grounded, "touching the sun respawns on the start planet");
 
@@ -98,20 +98,20 @@ int main(void) {
     CHECK_NEAR(p.altitude, 0, 1e-3f, "landed at zero altitude");
 
     /* camera stays tangent and outside the planet */
-    camera c; camera_init(&c, &p); camera_input cin; memset(&cin, 0, sizeof cin); cin.turn = 1.0f;
+    camera c; camera_init(&c, &p); camera_input cin; memset(&cin, 0, sizeof cin); cin.look_x = 1.0f;
     for (int f = 0; f < 120; f++) { world_update(&w, DT); player_update(&p, &w, &in, DT); camera_update(&c, &w, &p, &cin, DT); }
     CHECK(fabsf(v3_dot(c.fwd, c.up)) < 1e-3f, "camera forward is perpendicular to camera up");
     CHECK(v3_len(v3_sub(c.pos, w.b[1].pos)) > w.b[1].radius, "camera is outside the planet");
     CHECK(v3_len(v3_sub(c.view, c.fwd)) < 1e-2f, "on the ground the view is level with the heading");
 
-    /* d-pad up pitches the ground camera, walking brings it back to level */
-    cin.turn = 0; cin.look_y = 1.0f;
+    /* pad up pitches the ground camera, walking keeps the pitch */
+    cin.look_x = 0; cin.look_y = 1.0f;
     for (int f = 0; f < 60; f++) { world_update(&w, DT); player_update(&p, &w, &in, DT); camera_update(&c, &w, &p, &cin, DT); }
-    CHECK(v3_dot(c.view, c.up) > 0.5f, "d-pad up tilts the ground camera up");
+    CHECK(v3_dot(c.view, c.up) > 0.5f, "pad up tilts the ground camera up");
     CHECK(p.grounded, "still grounded while looking around");
     cin.look_y = 0; in.my = 1;
     for (int f = 0; f < 90; f++) { world_update(&w, DT); player_update(&p, &w, &in, DT); camera_update(&c, &w, &p, &cin, DT); }
-    CHECK(fabsf(v3_dot(c.view, c.up)) < 0.1f, "walking eases the ground camera back to level");
+    CHECK(v3_dot(c.view, c.up) > 0.4f, "walking keeps the look pitch");
     in.my = 0;
     for (int f = 0; f < 30; f++) { world_update(&w, DT); player_update(&p, &w, &in, DT); camera_update(&c, &w, &p, &cin, DT); }
 
@@ -148,11 +148,11 @@ int main(void) {
 
     /* up thrust follows the player's orientation, not gravity: pitch to face the planet,
        then X should push along the camera's up (tangent to the planet), not away from it */
-    if (p.grounded) {   /* the boost above may have put us back on Ember: climb first */
-        in.jump_pressed = 1; in.thrust_up = 1; in.view_up = p.up;
-        for (int f = 0; f < 120; f++) { world_update(&w, DT); player_update(&p, &w, &in, DT); camera_update(&c, &w, &p, &cin, DT); in.jump_pressed = 0; }
-        in.thrust_up = 0;
-    }
+    /* climb well clear of Ember first so nothing lands mid-test */
+    if (p.grounded) in.jump_pressed = 1;
+    in.thrust_up = 1; in.view_up = p.up;
+    for (int f = 0; f < 150; f++) { world_update(&w, DT); player_update(&p, &w, &in, DT); camera_update(&c, &w, &p, &cin, DT); in.jump_pressed = 0; in.view_up = p.up; }
+    in.thrust_up = 0;
     CHECK(!p.grounded, "airborne before the orientation thrust test");
     c.view = v3_any_perp(p.up); c.view_up = p.up;   /* level the camera (the roll test banked it) */
     cin.look_y = -1.0f;

@@ -148,9 +148,10 @@ Bottom screen: a VIEW touch button at the top right switches between third perso
 person with a smooth zoom into and out of the head. Text uses a built-in 5x7 pixel font
 (`orbit/source/font.c`), so it renders in the emulator without a system font dump.
 
-Controls on the ground: circle pad walks (camera relative, the player turns to face the
-direction), X jumps, the D-pad looks around (left/right orbit, up/down pitch) and walking eases
-the camera back behind you. In the air the game switches to flight controls:
+Controls on the ground: the circle pad is a free look (left/right orbits around the standing
+player, up/down tilts within limits), A walks in the direction the camera points horizontally
+(the player turns to face it), X jumps. In first person the same pad looks and A walks where
+you look. In the air the game switches to flight controls:
 X thrusts up and B thrusts down relative to your own body (the camera up), A boosts forward
 along the view, so all three follow your orientation, not the planet; Y is an air brake, the circle pad is a free look with no limits (up/down
 pitches, left/right turns, so you can loop), L/R roll. SELECT respawns, START quits. To

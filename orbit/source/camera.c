@@ -2,7 +2,6 @@
 
 #define CAM_BACK     7.0f
 #define CAM_UP       2.2f
-#define TURN_RATE    2.0f   /* shoulder buttons on the ground, rad/s */
 #define ROLL_RATE    2.0f   /* shoulder buttons in flight, rad/s */
 #define LOOK_YAW     2.2f   /* circle pad in flight, rad/s */
 #define LOOK_PITCH   2.0f
@@ -66,24 +65,20 @@ void camera_update(camera *c, const world *w, const player *p, const camera_inpu
             if (v3_len(h) > 1e-3f) c->fwd = v3_norm(h);
             c->ground_pitch = 0;
         }
-        if (in->turn != 0) {
-            float a = -in->turn * TURN_RATE * dt;
+        /* circle pad left/right orbits the look around the standing player */
+        if (in->look_x != 0) {
+            float a = -in->look_x * LOOK_YAW * dt;
             c->fwd = v3_rotate(c->fwd, c->up, a);
             c->view = v3_rotate(c->view, c->up, a);
             c->view_up = v3_rotate(c->view_up, c->up, a);
-        } else if (v3_len(p->move_dir) > 0.05f)
-            c->fwd = v3_lerp(c->fwd, p->facing, ease(2.5f, dt));
+        }
         c->fwd = v3_tangent(c->fwd, c->up);
         c->fwd = v3_len(c->fwd) < 1e-3f ? v3_any_perp(c->up) : v3_norm(c->fwd);
 
-        /* d-pad up/down pitches the ground camera; walking eases it back to level */
-        if (in->look_y != 0) {
-            c->ground_pitch += in->look_y * GROUND_PITCH_RATE * dt;
-            if (c->ground_pitch > GROUND_PITCH_MAX) c->ground_pitch = GROUND_PITCH_MAX;
-            if (c->ground_pitch < -GROUND_PITCH_MAX) c->ground_pitch = -GROUND_PITCH_MAX;
-        } else if (v3_len(p->move_dir) > 0.05f) {
-            c->ground_pitch *= 1.0f - ease(4.0f, dt);
-        }
+        /* circle pad up/down pitches the look, within limits; walking keeps it */
+        c->ground_pitch += in->look_y * GROUND_PITCH_RATE * dt;
+        if (c->ground_pitch > GROUND_PITCH_MAX) c->ground_pitch = GROUND_PITCH_MAX;
+        if (c->ground_pitch < -GROUND_PITCH_MAX) c->ground_pitch = -GROUND_PITCH_MAX;
         float cp = cosf(c->ground_pitch), sp = sinf(c->ground_pitch);
         v3 tv = v3_add(v3_scale(c->fwd, cp), v3_scale(c->up, sp));
         v3 tu = v3_sub(v3_scale(c->up, cp), v3_scale(c->fwd, sp));

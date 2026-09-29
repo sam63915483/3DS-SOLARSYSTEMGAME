@@ -53,9 +53,9 @@ void hud_draw(C3D_RenderTarget *bottom, const world *w, const player *p, const c
     /* controls */
     C2D_DrawRectSolid(0, 152, 0, 320, 1, C2D_Color32(0x30, 0x34, 0x44, 0xFF));
     if (p->grounded) {
-        font_draw("PAD  WALK       X  JUMP", 8, 160, 1.5f, dim);
-        font_draw("DPAD LOOK AROUND", 8, 176, 1.5f, dim);
-        font_draw("(WALK TO RESET THE CAMERA)", 8, 192, 1.5f, dim);
+        font_draw("PAD  LOOK       A  WALK", 8, 160, 1.5f, dim);
+        font_draw("X  JUMP", 8, 176, 1.5f, dim);
+        font_draw("(VIEW BUTTON: FIRST PERSON)", 8, 192, 1.5f, dim);
     } else {
         font_draw("PAD  LOOK       L/R ROLL", 8, 160, 1.5f, dim);
         font_draw("X  UP     B  DOWN", 8, 176, 1.5f, dim);

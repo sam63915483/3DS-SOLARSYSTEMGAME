@@ -16,9 +16,9 @@ typedef struct {
 void camera_toggle_view(camera *c);
 
 typedef struct {
-    float turn;    /* -1..1: yaw from the d-pad on the ground, roll from L/R in flight */
-    float look_x;  /* -1..1 yaw from the circle pad, only used in flight */
-    float look_y;  /* -1..1 pitch: d-pad on the ground (limited), circle pad in flight (unlimited) */
+    float turn;    /* -1..1 roll from L/R in flight; unused on the ground */
+    float look_x;  /* -1..1 yaw from the circle pad: free look on the ground and in flight */
+    float look_y;  /* -1..1 pitch from the circle pad: limited on the ground, unlimited in flight */
 } camera_input;
 
 void camera_init(camera *c, const player *p);

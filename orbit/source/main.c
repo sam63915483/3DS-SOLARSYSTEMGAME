@@ -52,11 +52,10 @@ int main(void) {
         camera_input cin;
         memset(&cin, 0, sizeof cin);
         if (p.grounded) {
-            /* walk with the pad, X jumps, d-pad looks around */
-            in.mx = px; in.my = py;
+            /* the pad looks around, A walks where the camera points, X jumps */
+            cin.look_x = px; cin.look_y = py;
+            in.mx = 0; in.my = (kHeld & KEY_A) ? 1.0f : 0.0f;
             in.jump_pressed = (kDown & KEY_X) != 0;
-            cin.turn = ((kHeld & KEY_DRIGHT) ? 1.0f : 0.0f) - ((kHeld & KEY_DLEFT) ? 1.0f : 0.0f);
-            cin.look_y = ((kHeld & KEY_DUP) ? 1.0f : 0.0f) - ((kHeld & KEY_DDOWN) ? 1.0f : 0.0f);
         } else {
             /* flight: the pad looks around freely, L/R roll, buttons thrust */
             cin.turn = ((kHeld & KEY_R) ? 1.0f : 0.0f) - ((kHeld & KEY_L) ? 1.0f : 0.0f);

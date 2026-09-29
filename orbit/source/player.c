@@ -1,6 +1,6 @@
 #include "player.h"
 
-#define WALK_SPEED   6.5f
+#define WALK_SPEED   8.0f
 #define JUMP_SPEED   9.0f
 #define THRUST      28.0f
 #define BRAKE_RATE   2.5f
