@@ -70,7 +70,19 @@ Run on PC: Azahar emulator, File > Load File > `app/sk1.3dsx`. Two emulator deta
   silent and 2 is the static-noise generator. Verified 2026-09-29 by recording a speaker
   beep: the app trimmed the silence and kept the 0.96 s beep.
 
-Run on the console (needs the Homebrew Launcher, both devices on the same Wi-Fi):
+Package as a CIA (installs to the Home Menu like any other title, no Homebrew Launcher needed):
+
+```
+C:\msys64\usr\bin\bash.exe -lc "source /etc/profile; cd /c/3ds/app && make && bash build_cia.sh"   # -> app/sk1.cia
+```
+
+Install over Wi-Fi with FBI: on the 3DS open FBI > Remote Install > Receive URLs over the
+network (it shows the console's IP), then on the PC run `node tools/send_to_fbi.js <ip>`.
+The script serves the CIA from this PC and FBI downloads and installs it. Or copy `sk1.cia`
+to the SD card and install it with FBI from there. Reinstalling the same CIA updates it in
+place. The DSP firmware note below still applies.
+
+Run on the console through the Homebrew Launcher instead (both devices on the same Wi-Fi):
 1. Once only: the audio needs the DSP firmware dump. Run the **DSP1** homebrew on the
    console once; it writes `sdmc:/3ds/dspfirm.cdc`. Without it the app shows a red
    message and stays silent.
