@@ -27,6 +27,7 @@ static void handle_buttons(void) {
         int r = fxui_key(&app.fxui, i, repeat, &changed);
         if (r & FXUI_CHANGED_FX) mixer_apply_fx(&app.mixer, changed, &app.fxui.cfg[changed]);
         if (r & FXUI_CHANGED_INST) mixer_set_instrument(&app.mixer, app.fxui.instrument);
+        if (r & FXUI_CHANGED_MODE) { mixer_set_mode(&app.mixer, fxui_mode(&app.fxui)); app_compute_sample_peaks(&app); app.heldMidi = -1; }
     }
 }
 
@@ -57,6 +58,7 @@ int main(void) {
     app.heldMidi = -1;
     app.topMode = TOP_SCOPE;
     app_compute_sample_peaks(&app);
+    mixer_set_mode(&app.mixer, fxui_mode(&app.fxui));
     app.dspOk = audio_init();
     app.micOk = mic_init();
 

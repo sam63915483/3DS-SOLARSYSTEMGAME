@@ -34,27 +34,35 @@ static void add_osc(Voice *v, int type, float hz, float detune, float gain) {
     Osc *o = &v->osc[v->nOsc++];
     o->type = type; o->hz = hz; o->detune = detune; o->extraDetune = 0; o->gain = gain; o->phase = 0;
 }
+/* attack/release in seconds; hold decay optional via holdTarget/holdCoef */
 static void env_setup(Voice *v, float attack, float release, float peak) {
-    v->amp = 0; v->peak = peak;
+    v->amp = 0; v->peak = peak; v->stage = 0;
+    if (attack < 0.001f) attack = 0.001f;
     v->attackInc = peak / (attack * SR);
+    if (release < 0.005f) release = 0.005f;
     v->releaseCoef = expf(-1.0f / (release / 4.0f * SR));
     v->holdTarget = peak; v->holdCoef = 0;
 }
 static inline float env_run(Voice *v) {
-    if (v->releasing) v->amp *= v->releaseCoef;
-    else if (v->amp < v->peak && v->holdCoef == 0) { v->amp += v->attackInc; if (v->amp > v->peak) v->amp = v->peak; }
-    else if (v->holdCoef > 0) v->amp += (v->holdTarget - v->amp) * v->holdCoef;
+    switch (v->stage) {
+    case 0: v->amp += v->attackInc; if (v->amp >= v->peak) { v->amp = v->peak; v->stage = 1; } break;
+    case 1: if (v->holdCoef > 0) v->amp += (v->holdTarget - v->amp) * v->holdCoef; break;
+    default: v->amp *= v->releaseCoef; break;
+    }
     return v->amp;
 }
 
-void voice_note_on(Voice *v, int instrument, int midi, const Sample *sample, unsigned age) {
+void voice_note_on(Voice *v, int instrument, int midi, const Sample *sample, const SampleMode *mode, unsigned age) {
     memset(v, 0, sizeof(*v));
     v->active = 1; v->instrument = instrument; v->midi = midi; v->age = age;
     float f = midi_to_hz(midi);
     switch (instrument) {
     case INST_SAMPLE:
         v->sample = sample; v->pos = 0;
-        env_setup(v, 0.004f, 0.04f, 1.0f);
+        if (mode) {
+            env_setup(v, mode->attack / 1000.0f, mode->release / 1000.0f, 1.0f);
+            if (mode->decay > 0) { v->holdTarget = mode->sustain; v->holdCoef = 1.0f / (mode->decay / 1000.0f * SR); }
+        } else env_setup(v, 0.004f, 0.04f, 1.0f);
         break;
     case INST_DREAM:
         add_osc(v, 1, f, -9, 0.22f); add_osc(v, 1, f, 9, 0.22f); add_osc(v, 3, f, 0, 0.22f); add_osc(v, 0, f / 2, 0, 0.11f);
@@ -93,8 +101,12 @@ void voice_note_on(Voice *v, int instrument, int midi, const Sample *sample, uns
     }
 }
 
-void voice_note_off(Voice *v) { v->releasing = 1; }
-void voice_cut(Voice *v) { v->releasing = 1; v->releaseCoef = expf(-1.0f / (0.0075f * SR)); }
+void voice_note_off(Voice *v) { v->releasing = 1; v->stage = 2; }
+void voice_cut(Voice *v) {
+    v->releasing = 1; v->stage = 2;
+    float quick = expf(-1.0f / (0.0075f * SR));
+    if (quick < v->releaseCoef) v->releaseCoef = quick;   /* never slower than the natural release */
+}
 void voice_bend(Voice *v, float semitones) { v->bend = semitones; }
 
 static inline float render_synth(Voice *v) {
@@ -155,14 +167,18 @@ void voice_render(Voice *v, float *out, int n) {
     if (!v->active) return;
     if (v->instrument == INST_SAMPLE) {
         const Sample *s = v->sample;
-        double rate = pow(2.0, (v->midi - ROOT_MIDI + v->bend) / 12.0);
+        /* the sample is stored at its own rate; scale so C4 plays it at original pitch */
+        double rate = pow(2.0, (v->midi - ROOT_MIDI + v->bend) / 12.0) * ((double)s->rate / SR);
         for (int i = 0; i < n; i++) {
+            if (v->pos >= s->length) {
+                if (!s->loop) { v->active = 0; return; }   /* one-shot finished */
+                v->pos -= (s->length - s->loopStart);
+            }
             int i0 = (int)v->pos; float frac = (float)(v->pos - i0);
-            int i1 = i0 + 1; if (i1 >= s->length) i1 = s->loopStart;
+            int i1 = i0 + 1; if (i1 >= s->length) i1 = s->loop ? s->loopStart : i0;
             float x = s->data[i0] + (s->data[i1] - s->data[i0]) * frac;
             out[i] += x * env_run(v);
             v->pos += rate;
-            while (v->pos >= s->length) v->pos -= (s->length - s->loopStart);
         }
     } else {
         for (int i = 0; i < n; i++) {

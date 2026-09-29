@@ -4,7 +4,7 @@
 import { KeyboardModel } from './keyboard.js';
 import { Sampler } from './sampler.js';
 import { drawTop, drawBottom, BOTTOM, hitRect, thumbRect } from './screens.js';
-import { createFxState, fxConfig, handleFxKey } from './fxui.js';
+import { createFxState, fxConfig, handleFxKey, currentMode } from './fxui.js';
 
 const shell = document.getElementById('shell');
 const topCanvas = document.getElementById('top');
@@ -131,9 +131,14 @@ function onInstrument(id) {
   state.sampler.setInstrument(id);
 }
 
-function pressButton(button, repeat) {
-  handleFxKey(state.fx, button, repeat, onFxChange, onInstrument);
+function onMode() {
+  state.sampler.setMode(currentMode(state.fx));
 }
+
+function pressButton(button, repeat) {
+  handleFxKey(state.fx, button, repeat, onFxChange, onInstrument, onMode);
+}
+onMode();
 
 addEventListener('keydown', (e) => {
   const button = BUTTONS[e.code] || BUTTONS[e.key];

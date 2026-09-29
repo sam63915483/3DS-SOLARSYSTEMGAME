@@ -1,8 +1,8 @@
 // Drawing for both screens at native 3DS resolution: top 400x240, bottom 320x240.
 
 import { noteName } from './keyboard.js';
-import { MAX_SECONDS, WAVE_COLUMNS } from './sampler.js';
-import { drawTabBar, drawFxPanel, drawPresetButton, drawPresetPage, TAB_BAR } from './fxui.js';
+import { WAVE_COLUMNS } from './sampler.js';
+import { drawTabBar, drawFxPanel, drawHeader, drawPresetPage, drawModesPage, TAB_BAR } from './fxui.js';
 
 // Bottom-screen layout. Touch targets are kept >= 36px tall for a stylus/finger.
 export const BOTTOM = {
@@ -138,6 +138,11 @@ export function drawTop(g, state) {
     drawPresetPage(g, fx);
     return;
   }
+  if (fx.modesOpen) {
+    scopeStarted = false;
+    drawModesPage(g, fx);
+    return;
+  }
   if (fx.open) {
     scopeStarted = false;
     drawFxPanel(g, fx);
@@ -147,14 +152,14 @@ export function drawTop(g, state) {
   if (topMode === 'scope') {
     drawScope(g, sampler);
     drawTabBar(g, fx);
-    drawPresetButton(g, fx);
+    drawHeader(g, fx);
     return;
   }
   scopeStarted = false;
 
   g.fillStyle = '#0e0f12';
   g.fillRect(0, 0, 400, 240);
-  drawHeader(g);
+  drawHeader(g, fx);
 
   // Waveform panel, leaving room for the effects tab bar underneath.
   const p = { x: 16, y: 40, w: WAVE_COLUMNS, h: TAB_BAR.y - 8 - 40 };
@@ -174,12 +179,13 @@ export function drawTop(g, state) {
     drawPeaks(g, p, sampler.livePeaks(), '#ff6b5b');
     const secs = sampler.recordedSeconds;
     g.fillStyle = '#c0392b';
-    g.fillRect(p.x, p.y + p.h - 4, Math.round(p.w * secs / MAX_SECONDS), 4);
+    const maxSecs = sampler.mode.seconds;
+    g.fillRect(p.x, p.y + p.h - 4, Math.round(p.w * secs / maxSecs), 4);
     g.fillStyle = '#ff6b5b';
     g.font = 'bold 12px sans-serif';
     g.textAlign = 'left';
     g.textBaseline = 'alphabetic';
-    g.fillText(`● REC  ${secs.toFixed(1)} s / ${MAX_SECONDS} s`, p.x + 8, p.y + 16);
+    g.fillText(`● REC  ${secs.toFixed(1)} s / ${maxSecs} s`, p.x + 8, p.y + 16);
     // Input level meter.
     const level = Math.min(1, sampler.inputLevel * 4);
     g.fillStyle = '#2c2d36';
@@ -192,24 +198,17 @@ export function drawTop(g, state) {
     g.font = '11px sans-serif';
     g.textAlign = 'left';
     g.textBaseline = 'alphabetic';
-    const trim = sampler.trimmedMs ? `   (trimmed ${sampler.trimmedMs} ms of silence)` : '';
-    g.fillText(`YOUR SAMPLE  ${sampler.sampleSeconds.toFixed(2)} s${trim}`, p.x + 8, p.y + 16);
+    const trim = sampler.trimmedMs && !sampler.sampleIsBuiltIn ? `   (trimmed ${sampler.trimmedMs} ms of silence)` : '';
+    const label = sampler.sampleIsBuiltIn ? 'BUILT-IN TONE' : 'YOUR SAMPLE';
+    const m = sampler.mode;
+    g.fillText(`${label}  ${sampler.sampleSeconds.toFixed(2)} s   ${(m.rate / 1000).toFixed(1)} kHz ${m.bits}-bit ${m.loop ? 'loop' : 'one-shot'}${trim}`, p.x + 8, p.y + 16);
     g.fillStyle = '#6a6a78';
     g.textAlign = 'right';
     g.fillText('PLAY A KEY FOR THE SCOPE', p.x + p.w - 8, p.y + p.h - 10);
   }
 
   drawTabBar(g, fx);
-  drawPresetButton(g, fx);
   drawError(g, sampler);
-}
-
-function drawHeader(g) {
-  g.textBaseline = 'alphabetic';
-  g.fillStyle = '#ff6b5b';
-  g.font = 'bold 15px sans-serif';
-  g.textAlign = 'left';
-  g.fillText('SK-1 CLONE', 16, 27);
 }
 
 function drawError(g, sampler) {
@@ -309,15 +308,12 @@ function drawScope(g, sampler) {
   g.stroke();
   g.shadowBlur = 0;
 
-  // Corner labels (the preset button is drawn top right by the caller).
-  g.font = 'bold 12px sans-serif';
+  // Note name under the title (the header row itself is drawn by the caller).
   g.textBaseline = 'alphabetic';
-  g.textAlign = 'left';
-  g.fillStyle = '#ff6b5b';
-  g.fillText('SK-1 CLONE', 12, 20);
+  g.textAlign = 'center';
   g.fillStyle = midi === null ? '#3a3a44' : `hsl(${hue}, 90%, 70%)`;
   g.font = 'bold 18px sans-serif';
-  g.fillText(midi === null ? '–' : noteName(midi), 100, 22);
+  g.fillText(midi === null ? '–' : noteName(midi), 200, 48);
 
   drawError(g, sampler);
 }

@@ -36,7 +36,7 @@ static void press_at(App *a, int px, int py) {
 
 static void toggle_record(App *a) {
     if (mic_is_recording()) { mic_stop(&a->mixer); mixer_set_muted(&a->mixer, 0); }
-    else if (a->micOk) { mixer_set_muted(&a->mixer, 1); if (!mic_start()) mixer_set_muted(&a->mixer, 0); }
+    else if (a->micOk) { mixer_set_muted(&a->mixer, 1); if (!mic_start(a->mixer.mode.seconds)) mixer_set_muted(&a->mixer, 0); }
 }
 
 void ui_bottom_input(App *a) {

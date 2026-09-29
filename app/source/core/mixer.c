@@ -2,9 +2,18 @@
 #include <math.h>
 #include <string.h>
 
+static void reprocess(Mixer *m) {
+    int trimmed = m->sample.trimmedMs;
+    sample_process(&m->sample, m->raw, m->rawLen, &m->mode, m->rawIsBuiltIn);
+    m->sample.trimmedMs = m->rawIsBuiltIn ? 0 : trimmed;
+}
+
 void mixer_init(Mixer *m) {
     memset(m, 0, sizeof(*m));
-    sample_make_builtin(&m->sample);
+    m->mode = MODE_PRESETS[0].settings;
+    m->rawLen = sample_builtin_raw(m->raw);
+    m->rawIsBuiltIn = 1;
+    reprocess(m);
     m->held = -1;
     m->instrument = INST_SAMPLE;
     svf_set(&m->padLow, 7000, 2); svf_set(&m->padHigh, 20, 2);
@@ -23,7 +32,7 @@ static int find_slot(Mixer *m) {
 void mixer_note_on(Mixer *m, int midi) {
     if (m->held >= 0) { voice_cut(&m->voices[m->held]); m->held = -1; }
     int slot = find_slot(m);
-    voice_note_on(&m->voices[slot], m->instrument, midi, &m->sample, ++m->age);
+    voice_note_on(&m->voices[slot], m->instrument, midi, &m->sample, &m->mode, ++m->age);
     voice_bend(&m->voices[slot], m->bend);
     m->held = slot;
 }
@@ -35,6 +44,25 @@ void mixer_note_off(Mixer *m) {
 }
 
 void mixer_set_instrument(Mixer *m, int instrument) { m->instrument = instrument; }
+
+void mixer_set_mode(Mixer *m, const SampleMode *mode) {
+    m->mode = *mode;
+    /* voices read the sample while it is rewritten: silence them first */
+    for (int i = 0; i < MAX_VOICES; i++) if (m->voices[i].instrument == INST_SAMPLE) m->voices[i].active = 0;
+    m->held = -1;
+    reprocess(m);
+}
+
+void mixer_set_recording(Mixer *m, const float *rec, int n) {
+    for (int i = 0; i < MAX_VOICES; i++) if (m->voices[i].instrument == INST_SAMPLE) m->voices[i].active = 0;
+    m->held = -1;
+    int trimmedMs;
+    m->rawLen = sample_trim_normalize(rec, n, m->raw, &trimmedMs);
+    m->rawIsBuiltIn = 0;
+    m->sample.trimmedMs = trimmedMs;
+    reprocess(m);
+    m->instrument = INST_SAMPLE;   /* a fresh recording always becomes the active sound */
+}
 
 void mixer_set_pad(Mixer *m, float x, float y) {
     m->bend = y * 12.0f;
@@ -57,6 +85,7 @@ void mixer_render(Mixer *m, short *out, int n) {
     if (n > BLOCK) n = BLOCK;
     memset(mono, 0, n * sizeof(float));
     for (int i = 0; i < MAX_VOICES; i++) voice_render(&m->voices[i], mono, n);
+    if (m->held >= 0 && !m->voices[m->held].active) m->held = -1;   /* one-shot finished */
 
     /* circle pad filters, bypassed when the pad is centred */
     if (m->padX < -0.02f || m->padX > 0.02f) {

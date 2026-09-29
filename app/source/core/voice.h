@@ -1,5 +1,5 @@
-/* One playing note: either the recorded sample (looped, rate-pitched) or one of the five
- * synth instruments. Port of the sample voice in sampler.js and of instruments.js. */
+/* One playing note: either the recorded sample (rate-pitched, looped or one-shot, shaped by
+ * the mode's ADSR) or one of the five synth instruments. Port of sampler.js / instruments.js. */
 #ifndef VOICE_H
 #define VOICE_H
 #include "config.h"
@@ -18,7 +18,8 @@ typedef struct {
     int active, releasing;
     int instrument, midi;
     float bend;                 /* semitones from the circle pad */
-    /* amplitude envelope */
+    /* amplitude envelope: stage 0 attack, 1 hold/decay, 2 release */
+    int stage;
     float amp, peak, attackInc, releaseCoef, holdTarget, holdCoef;
     /* sample playback */
     const Sample *sample; double pos;
@@ -33,7 +34,8 @@ typedef struct {
     unsigned age;               /* for voice stealing */
 } Voice;
 
-void voice_note_on(Voice *v, int instrument, int midi, const Sample *sample, unsigned age);
+/* mode is only used for INST_SAMPLE (its envelope); pass NULL for synths. */
+void voice_note_on(Voice *v, int instrument, int midi, const Sample *sample, const SampleMode *mode, unsigned age);
 void voice_note_off(Voice *v);                  /* natural release */
 void voice_cut(Voice *v);                       /* quick 30 ms release (retrigger) */
 void voice_bend(Voice *v, float semitones);

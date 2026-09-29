@@ -1,24 +1,29 @@
-// Audio engine: one sample, one voice, and a mic recorder capped at MAX_SECONDS.
+// Audio engine: the recorded sample (processed through the current mode), one held voice plus
+// releasing tails, a mic recorder, the circle-pad filters and the effect chain.
 // Pitch is changed by playback rate, which is exactly what the 3DS DSP (ndsp) can do per channel.
 
 import { createEffectChain } from './effects.js';
 import { createSynthVoice } from './instruments.js';
+import { MODE_PRESETS, trimRange, normalize, processRecording } from './sample.js';
+export { trimRange, normalize, makeLoopable } from './sample.js';
 
-export const MAX_SECONDS = 10;
 export const ROOT_MIDI = 60;      // C4 plays the sample at its recorded pitch
 export const WAVE_COLUMNS = 368;  // waveform resolution on the top screen
+const DISCARD_MS = 200;           // mic input to throw away right after REC (speaker still fading)
 
 export class Sampler {
   constructor() {
     this.ctx = null;
-    this.sample = null;        // AudioBuffer
+    this.raw = null;           // Float32Array at the context rate: trimmed + normalised recording
+    this.sample = null;        // AudioBuffer at the mode's rate, after bits/loop processing
+    this.loopStart = 0;        // seconds; where playback jumps back to after the crossfaded tail
     this.sampleIsBuiltIn = true;
-    this.voice = null;         // { src, gain, midi }
+    this.mode = { ...MODE_PRESETS[0].settings };
+    this.voice = null;         // { midi, stop(fade?), bend(semitones) }
     this.rec = null;           // active recording session
     this.error = null;
     this.peakCache = null;
     this.trimmedMs = 0;        // leading silence removed from the last recording
-    this.loopStart = 0;        // seconds; where playback jumps back to after the crossfaded tail
     this.master = null;        // voices -> master -> pad filters -> effects -> analyser -> speakers
     this.padLow = null;        // circle pad left: low-pass sweep
     this.padHigh = null;       // circle pad right: high-pass sweep
@@ -40,6 +45,8 @@ export class Sampler {
       this.analyser = ctx.createAnalyser();
       this.analyser.fftSize = 2048;
       this.analyser.smoothingTimeConstant = 0.7;
+      this._wave = new Float32Array(this.analyser.fftSize);
+      this._freq = new Uint8Array(this.analyser.frequencyBinCount);
       this.padLow = ctx.createBiquadFilter();
       this.padLow.type = 'lowpass';
       this.padLow.frequency.value = 20000;
@@ -52,21 +59,26 @@ export class Sampler {
       this.padLow.connect(this.padHigh);
       this.analyser.connect(ctx.destination);
       this.buildChain();
-      this._wave = new Float32Array(this.analyser.fftSize);
-      this._freq = new Uint8Array(this.analyser.frequencyBinCount);
-      this.setSample(makeBuiltInSample(ctx.sampleRate), ctx.sampleRate, true);
+      this.raw = makeBuiltInSample(ctx.sampleRate);
+      this.sampleIsBuiltIn = true;
+      this.rebuild();
     }
     if (this.ctx.state === 'suspended') this.ctx.resume();
   }
 
-  // Installs raw PCM as the instrument, with the loop seam crossfaded so it doesn't click.
-  setSample(data, rate, builtIn) {
-    const looped = makeLoopable(data, rate);
-    const buf = this.ctx.createBuffer(1, looped.data.length, rate);
-    buf.getChannelData(0).set(looped.data);
+  // Applies a sampler mode (length, rate, bits, loop, envelope). Re-processes the current sound.
+  setMode(mode) {
+    this.mode = { ...mode };
+    if (this.raw) this.rebuild();
+  }
+
+  // Runs the raw recording through the mode: resample, quantise, loop crossfade.
+  rebuild() {
+    const { data, loopStart } = processRecording(this.raw, this.ctx.sampleRate, this.mode);
+    const buf = this.ctx.createBuffer(1, data.length, this.mode.rate);
+    buf.getChannelData(0).set(data);
     this.sample = buf;
-    this.loopStart = looped.loopStart / rate;
-    this.sampleIsBuiltIn = builtIn;
+    this.loopStart = loopStart / this.mode.rate;
     this.peakCache = null;
   }
 
@@ -134,7 +146,7 @@ export class Sampler {
 
   noteOn(midi) {
     this.ensure();
-    // Retrigger: cut the old voice quickly (synth voices clamp this to their own release).
+    // Retrigger: cut the old voice quickly (voices clamp this to their own release).
     if (this.voice) { this.voice.stop(0.03); this.voice = null; }
     const voice = this.instrument === 'sample'
       ? this.sampleVoice(midi)
@@ -149,35 +161,44 @@ export class Sampler {
     this.voice = null;
   }
 
-  // The recorded sound, looped and pitched by playback rate.
+  // The recorded sound, pitched by playback rate, looped or one-shot, shaped by the mode's ADSR.
   sampleVoice(midi) {
-    const ctx = this.ctx;
+    const ctx = this.ctx, m = this.mode;
     const t = ctx.currentTime;
     const src = ctx.createBufferSource();
     src.buffer = this.sample;
-    src.loop = true; // keeps repeating until the key is released
-    src.loopStart = this.loopStart;
-    src.loopEnd = this.sample.duration;
+    if (m.loop) {
+      src.loop = true; // keeps repeating until the key is released
+      src.loopStart = this.loopStart;
+      src.loopEnd = this.sample.duration;
+    }
+    src.playbackRate.value = Math.pow(2, (midi - ROOT_MIDI + this.bend) / 12);
     const gain = ctx.createGain();
+    const attack = Math.max(0.002, m.attack / 1000);
     gain.gain.setValueAtTime(0, t);
-    gain.gain.linearRampToValueAtTime(1, t + 0.004);
+    gain.gain.linearRampToValueAtTime(1, t + attack);
+    if (m.decay > 0) gain.gain.setTargetAtTime(m.sustain, t + attack, m.decay / 3000);
     src.connect(gain);
     gain.connect(this.master);
     src.start(t);
     let stopped = false;
-    return {
+    const voice = {
       midi,
       bend: (semi) => { src.playbackRate.value = Math.pow(2, (midi - ROOT_MIDI + semi) / 12); },
-      stop: (fade = 0.04) => {
+      stop: (fade) => {
         if (stopped) return;
         stopped = true;
+        const release = Math.max(0.005, m.release / 1000);
+        const rel = fade === undefined ? release : Math.min(fade, release);
         const now = ctx.currentTime;
         gain.gain.cancelScheduledValues(now);
         gain.gain.setValueAtTime(gain.gain.value, now);
-        gain.gain.linearRampToValueAtTime(0, now + fade);
-        src.stop(now + fade + 0.01);
+        gain.gain.setTargetAtTime(0, now, Math.max(0.003, rel / 4));
+        src.stop(now + rel + 0.05);
       },
     };
+    src.onended = () => { if (this.voice === voice) this.voice = null; };
+    return voice;
   }
 
   async startRecording() {
@@ -202,7 +223,7 @@ export class Sampler {
     if (this.rec) { stream.getTracks().forEach(t => t.stop()); return; }
 
     const ctx = this.ctx;
-    const maxSamples = Math.floor(MAX_SECONDS * ctx.sampleRate);
+    const maxSamples = Math.floor(this.mode.seconds * ctx.sampleRate);
     const source = ctx.createMediaStreamSource(stream);
     const sink = ctx.createGain();
     sink.gain.value = 0; // the recorder must reach the destination to run, but the mic must stay silent
@@ -280,16 +301,17 @@ export class Sampler {
     let offset = 0;
     for (const chunk of rec.chunks) { raw.set(chunk, offset); offset += chunk.length; }
 
-    // Trim silence so the sample starts the instant the sound does. Without this the mic
-    // start-up gap plus reaction time becomes a dead pause on every key press.
+    // Trim silence so the sample starts the instant the sound does, then normalise.
     const rate = this.ctx.sampleRate;
     const [start, end] = trimRange(raw, rate);
     this.trimmedMs = Math.round(1000 * start / rate);
-    this.setSample(normalize(raw.slice(start, end)), rate, false);
+    this.raw = normalize(raw.slice(start, end));
+    this.sampleIsBuiltIn = false;
+    this.rebuild();
     this.instrument = 'sample'; // a fresh recording always becomes the active keyboard sound
   }
 
-  // Waveform of the recording in progress, laid out over the full 10 s width.
+  // Waveform of the recording in progress, laid out over the full recording length.
   livePeaks() {
     return this.rec ? { min: this.rec.colsMin, max: this.rec.colsMax } : null;
   }
@@ -316,51 +338,6 @@ export class Sampler {
     }
     return this.peakCache;
   }
-}
-
-// Trimming works on a 10 ms RMS envelope. The sound starts where the envelope first reaches
-// a level relative to the loudest moment (with an absolute floor so faint noise never counts)
-// and ends where it last stays above a lower "decay" level.
-const ABS_FLOOR = 0.04;       // RMS below this is always silence (about -28 dBFS)
-const START_REL = 0.15;       // start: within -16 dB of the loudest window
-const END_REL = 0.03;         // end: last window within -30 dB of the loudest
-const PRE_ROLL_MS = 10;       // keep a little audio before the start so attacks stay intact
-const TAIL_MS = 60;           // keep a short tail after the sound decays
-const NORMALIZE_PEAK = 0.9;
-const MAX_GAIN = 20;
-const DISCARD_MS = 200;       // mic input to throw away right after REC (speaker still fading)
-
-// Returns [start, end) sample indices around the recorded sound. Whole range if all quiet.
-export function trimRange(data, rate) {
-  const win = Math.round(rate / 100);
-  const nw = Math.floor(data.length / win);
-  if (nw < 1) return [0, data.length];
-  const env = new Float32Array(nw);
-  let peak = 0;
-  for (let w = 0; w < nw; w++) {
-    let sq = 0;
-    for (let i = w * win; i < (w + 1) * win; i++) sq += data[i] * data[i];
-    env[w] = Math.sqrt(sq / win);
-    if (env[w] > peak) peak = env[w];
-  }
-  if (peak < ABS_FLOOR) return [0, data.length];
-  const thrStart = Math.max(ABS_FLOOR, peak * START_REL);
-  const thrEnd = Math.max(ABS_FLOOR * 0.5, peak * END_REL);
-  let first = 0; while (first < nw && env[first] < thrStart) first++;
-  let last = nw - 1; while (last > first && env[last] < thrEnd) last--;
-  const start = Math.max(0, first * win - Math.round(rate * PRE_ROLL_MS / 1000));
-  const end = Math.min(data.length, (last + 1) * win + Math.round(rate * TAIL_MS / 1000));
-  return [start, end];
-}
-
-// Scales the recording so its peak sits at NORMALIZE_PEAK (quiet recordings play at full level).
-export function normalize(data) {
-  let peak = 0;
-  for (let i = 0; i < data.length; i++) { const a = Math.abs(data[i]); if (a > peak) peak = a; }
-  if (peak < 1e-4) return data;
-  const gain = Math.min(MAX_GAIN, NORMALIZE_PEAK / peak);
-  for (let i = 0; i < data.length; i++) data[i] *= gain;
-  return data;
 }
 
 // The recorder processor: batches 128-frame render quanta into 1024-sample blocks and posts
@@ -402,25 +379,6 @@ function loadRecorderWorklet(ctx) {
     recorderWorkletLoaded = ctx.audioWorklet.addModule(url);
   }
   return recorderWorkletLoaded;
-}
-
-const LOOP_FADE_MS = 50;
-const START_FADE_MS = 2;
-
-// Crossfades the tail of the sample into its head so looping has no audible seam.
-// Playback runs 0..end once, then loops from `loopStart` (the head was already blended into the tail).
-export function makeLoopable(data, rate) {
-  const out = Float32Array.from(data);
-  // Tiny fade-in so the very first play never starts with a click.
-  const startFade = Math.min(Math.round(rate * START_FADE_MS / 1000), Math.floor(data.length / 8));
-  for (let i = 0; i < startFade; i++) out[i] = data[i] * (i / startFade);
-  const fade = Math.min(Math.round(rate * LOOP_FADE_MS / 1000), Math.floor(data.length / 4));
-  const tailStart = data.length - fade;
-  for (let i = 0; i < fade; i++) {
-    const t = i / fade;
-    out[tailStart + i] = data[tailStart + i] * Math.cos(t * Math.PI / 2) + data[i] * Math.sin(t * Math.PI / 2);
-  }
-  return { data: out, loopStart: fade };
 }
 
 // A plucky one-second tone at middle C so the keyboard is playable before anything is recorded.

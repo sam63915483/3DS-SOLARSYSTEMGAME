@@ -28,21 +28,44 @@ int main(void) {
     fxui_key(&u, BTN_B, 0, &ch);
     CHECK(!u.open && u.cfg[FX_FLANGER].enabled, "B closes and the effect stays on");
 
-    /* Keyboard preset button and page. */
+    /* Top row: MODES (left) and PRESET (right). */
     fxui_key(&u, BTN_UP, 0, &ch);
-    CHECK(u.onPresetButton && !u.presetOpen, "up from the tab bar focuses the preset button");
-    fxui_key(&u, BTN_LEFT, 0, &ch);
-    CHECK(u.tab == FX_FLANGER, "left/right do nothing on the button");
+    CHECK(u.onTopRow && u.topCol == 1, "up from the tab bar focuses the top row on PRESET");
+    fxui_key(&u, BTN_LEFT, 0, &ch); fxui_key(&u, BTN_RIGHT, 0, &ch);
+    CHECK(u.topCol == 1 && u.tab == FX_FLANGER, "left/right switch between MODES and PRESET, tabs untouched");
     fxui_key(&u, BTN_A, 0, &ch);
-    CHECK(u.presetOpen && u.presetRow == INST_SAMPLE, "A opens the page on the current preset");
+    CHECK(u.presetOpen && u.presetRow == INST_SAMPLE, "A opens the keyboard preset page on the current preset");
     fxui_key(&u, BTN_DOWN, 0, &ch); fxui_key(&u, BTN_DOWN, 0, &ch);
     r = fxui_key(&u, BTN_A, 0, &ch);
     CHECK(u.instrument == INST_BELLS && r == FXUI_CHANGED_INST, "A selects GLASS BELLS");
     for (int i = 0; i < 10; i++) fxui_key(&u, BTN_DOWN, 0, &ch);
     CHECK(u.presetRow == INST_COUNT - 1, "highlight clamps at the last row");
     fxui_key(&u, BTN_B, 0, &ch);
-    CHECK(!u.presetOpen && u.onPresetButton && u.instrument == INST_BELLS, "B closes, choice kept");
+    CHECK(!u.presetOpen && u.onTopRow && u.instrument == INST_BELLS, "B closes, choice kept");
+
+    /* Modes page. */
+    fxui_key(&u, BTN_LEFT, 0, &ch); fxui_key(&u, BTN_A, 0, &ch);
+    CHECK(u.modesOpen && u.modesRow == 0 && u.modesCol == 0, "MODES opens on the preset row");
+    fxui_key(&u, BTN_RIGHT, 0, &ch);
+    r = fxui_key(&u, BTN_A, 0, &ch);
+    CHECK(u.modePreset == 1 && fxui_mode(&u)->rate == 9380 && r == FXUI_CHANGED_MODE, "A on SK-1 selects it and reports a mode change");
+    fxui_key(&u, BTN_DOWN, 0, &ch); fxui_key(&u, BTN_DOWN, 0, &ch);
+    r = fxui_key(&u, BTN_RIGHT, 0, &ch);
+    CHECK(fxui_mode(&u)->rate == 9380 && r == 0, "locked preset: settings cannot change");
+    fxui_key(&u, BTN_UP, 0, &ch); fxui_key(&u, BTN_UP, 0, &ch); fxui_key(&u, BTN_LEFT, 0, &ch); fxui_key(&u, BTN_A, 0, &ch);
+    CHECK(u.modePreset == 0, "back to USER");
+    fxui_key(&u, BTN_DOWN, 0, &ch); fxui_key(&u, BTN_DOWN, 0, &ch);
+    r = fxui_key(&u, BTN_LEFT, 0, &ch);
+    CHECK(fxui_mode(&u)->rate == 26040 && r == FXUI_CHANGED_MODE, "USER: left on RATE steps down and reports");
+    fxui_key(&u, BTN_DOWN, 0, &ch); fxui_key(&u, BTN_DOWN, 0, &ch); fxui_key(&u, BTN_RIGHT, 0, &ch);
+    CHECK(fxui_mode(&u)->loop == 0, "LOOP toggles to one-shot");
+    for (int i = 0; i < 20; i++) fxui_key(&u, BTN_DOWN, 0, &ch);
+    CHECK(u.modesRow == MODE_FIELD_COUNT, "down clamps at the last field");
+    for (int i = 0; i < 100; i++) fxui_key(&u, BTN_RIGHT, 1, &ch);
+    CHECK_NEAR(fxui_mode(&u)->release, 3000, 1e-3, "RELEASE slider repeats and clamps at max");
+    fxui_key(&u, BTN_B, 0, &ch);
+    CHECK(!u.modesOpen && u.onTopRow, "B closes the modes page, focus stays on the top row");
     fxui_key(&u, BTN_DOWN, 0, &ch);
-    CHECK(!u.onPresetButton, "down returns to the tab bar");
+    CHECK(!u.onTopRow, "down returns to the tab bar");
     MT_END();
 }
