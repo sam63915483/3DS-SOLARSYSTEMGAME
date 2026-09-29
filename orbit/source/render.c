@@ -157,7 +157,7 @@ void render_scene(const world *w, const player *p, const camera *c) {
     Mtx_PerspTilt(&proj, C3D_AngleFromDegrees(55.0f), C3D_AspectRatioTop, 0.5f, 3.0f * STAR_RADIUS, false);
     Mtx_LookAt(&view, FVec3_New(c->pos.x, c->pos.y, c->pos.z),
                FVec3_New(c->target.x, c->target.y, c->target.z),
-               FVec3_New(c->up.x, c->up.y, c->up.z), false);
+               FVec3_New(c->view_up.x, c->view_up.y, c->view_up.z), false);
     C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, uProj, &proj);
 
     /* the sun is the light, positioned in view space */

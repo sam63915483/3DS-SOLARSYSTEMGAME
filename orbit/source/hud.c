@@ -53,9 +53,9 @@ void hud_draw(C3D_RenderTarget *bottom, const world *w, const player *p, float f
         text("Circle pad  walk      B  jump", 8, 166, 13, dim);
         text("L / R  turn camera", 8, 182, 13, dim);
     } else {
-        text("Circle pad  look (up/down pitches)", 8, 166, 13, dim);
-        text("B  thrust forward    X  thrust up", 8, 182, 13, dim);
-        text("A  thrust back       Y  brake", 8, 198, 13, dim);
+        text("Circle pad  look      L / R  roll", 8, 166, 13, dim);
+        text("B  thrust up         A  boost forward", 8, 182, 13, dim);
+        text("X  thrust back       Y  brake", 8, 198, 13, dim);
     }
     text("SELECT  respawn    START  quit", 8, 214, 13, dim);
 }

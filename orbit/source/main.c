@@ -57,11 +57,11 @@ int main(void) {
             in.mx = px; in.my = py;
             in.jump_pressed = (kDown & KEY_B) != 0;
         } else {
-            /* flight: the pad looks around, buttons thrust */
+            /* flight: the pad looks around freely, L/R roll, buttons thrust */
             cin.look_x = px; cin.look_y = py;
-            in.thrust_fwd = (kHeld & KEY_B) != 0;
-            in.thrust_up = (kHeld & KEY_X) != 0;
-            in.thrust_back = (kHeld & KEY_A) != 0;
+            in.thrust_up = (kHeld & KEY_B) != 0;
+            in.thrust_fwd = (kHeld & KEY_A) != 0;
+            in.thrust_back = (kHeld & KEY_X) != 0;
             in.brake = (kHeld & KEY_Y) != 0;
         }
         in.cam_forward = cam.fwd;

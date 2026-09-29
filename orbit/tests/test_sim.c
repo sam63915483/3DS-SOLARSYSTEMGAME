@@ -102,22 +102,37 @@ int main(void) {
     for (int f = 0; f < 120; f++) { world_update(&w, DT); player_update(&p, &w, &in, DT); camera_update(&c, &w, &p, &cin, DT); }
     CHECK(fabsf(v3_dot(c.fwd, c.up)) < 1e-3f, "camera forward is perpendicular to camera up");
     CHECK(v3_len(v3_sub(c.pos, w.b[1].pos)) > w.b[1].radius, "camera is outside the planet");
-    CHECK(fabsf(c.pitch) < 1e-3f, "pitch stays zero on the ground");
+    CHECK(v3_len(v3_sub(c.view, c.fwd)) < 1e-2f, "on the ground the view is level with the heading");
 
-    /* flight: pad pitches the view, B thrusts along it */
-    in.jump_pressed = 1;
+    /* flight: the pad pitches the view without limit, A boosts along it */
+    in.jump_pressed = 1; in.thrust_up = 1;
     world_update(&w, DT); player_update(&p, &w, &in, DT);
     in.jump_pressed = 0;
     cin.turn = 0; cin.look_y = 1.0f;
+    v3 start_view = c.view;
+    int looked_back = 0;
     for (int f = 0; f < 30; f++) { world_update(&w, DT); player_update(&p, &w, &in, DT); camera_update(&c, &w, &p, &cin, DT); }
-    CHECK(c.pitch > 0.5f, "holding the pad up pitches the view up in flight");
+    CHECK(v3_dot(c.view, p.up) > 0.4f, "holding the pad up pitches the view up in flight");
     CHECK(fabsf(v3_dot(c.view, c.view_up)) < 1e-3f, "pitched view stays perpendicular to its up");
-    CHECK(v3_dot(c.view, p.up) > 0.4f, "pitched view points partly away from the planet");
-    cin.look_y = 0; in.thrust_fwd = 1; in.view_forward = c.view;
+    for (int f = 0; f < 160; f++) {
+        world_update(&w, DT); player_update(&p, &w, &in, DT); camera_update(&c, &w, &p, &cin, DT);
+        if (v3_dot(c.view, start_view) < -0.9f) looked_back = 1;
+    }
+    CHECK(looked_back, "pitch is not clamped: a full backflip passes through looking backward");
+    CHECK(v3_dot(c.view, start_view) > 0.9f, "after a full loop the view is back where it started");
+    cin.look_y = 0;
+    /* roll with the shoulder buttons keeps the view direction */
+    v3 view_before_roll = c.view, up_before_roll = c.view_up;
+    cin.turn = 1.0f;
+    for (int f = 0; f < 30; f++) { world_update(&w, DT); player_update(&p, &w, &in, DT); camera_update(&c, &w, &p, &cin, DT); }
+    CHECK(v3_dot(c.view, view_before_roll) > 0.999f, "rolling keeps the view direction");
+    CHECK(v3_dot(c.view_up, up_before_roll) < 0.7f, "rolling turns the camera up vector");
+    cin.turn = 0;
+    in.thrust_up = 0; in.thrust_fwd = 1; in.view_forward = c.view;
     v3 before = p.vel;
     for (int f = 0; f < 30; f++) { world_update(&w, DT); player_update(&p, &w, &in, DT); camera_update(&c, &w, &p, &cin, DT); in.view_forward = c.view; }
-    CHECK(v3_dot(v3_sub(p.vel, before), c.view) > 8.0f, "B thrusts along the view direction");
-    CHECK(p.thrusting, "flame shows while thrusting forward");
+    CHECK(v3_dot(v3_sub(p.vel, before), c.view) > 8.0f, "A boosts along the view direction");
+    CHECK(p.thrusting, "flame shows while boosting");
     in.thrust_fwd = 0;
 
     /* meshes: sphere normals are unit and winding faces outward */

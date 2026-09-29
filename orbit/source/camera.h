@@ -1,19 +1,19 @@
-/* Third-person chase camera that rolls with local gravity and pitches in flight. */
+/* Third-person chase camera: gravity-aligned on the ground, free orientation in flight. */
 #ifndef CAMERA_H
 #define CAMERA_H
 #include "player.h"
 
 typedef struct {
-    v3 up, fwd;       /* smoothed gravity up and the heading tangent to it */
-    float pitch;      /* radians above the heading, only nonzero in flight */
-    v3 view, view_up; /* pitched look direction and the matching up vector */
+    v3 up, fwd;       /* smoothed gravity up and the walking heading tangent to it */
+    v3 view, view_up; /* the orientation actually used: free in flight, eases to fwd/up on the ground */
     v3 pos, target;   /* result for the view matrix */
+    int was_grounded;
 } camera;
 
 typedef struct {
-    float turn;    /* -1..1 yaw from the shoulder buttons */
+    float turn;    /* -1..1: yaw from the shoulder buttons on the ground, roll in flight */
     float look_x;  /* -1..1 yaw from the circle pad, only used in flight */
-    float look_y;  /* -1..1 pitch from the circle pad, up is positive */
+    float look_y;  /* -1..1 pitch from the circle pad, up is positive, unlimited */
 } camera_input;
 
 void camera_init(camera *c, const player *p);

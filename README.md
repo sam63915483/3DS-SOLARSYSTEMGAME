@@ -145,12 +145,12 @@ fragment lighting with the sun as the point light), `hud.c` is the citro2d botto
 `main.c` the loop.
 
 Controls on the ground: circle pad walks (camera relative, the player turns to face the
-direction), B jumps, L/R orbit the camera. In the air the game switches to flight controls:
-the circle pad looks around (left/right yaws, up/down pitches), B thrusts wherever you are
-looking, X thrusts straight up away from gravity (jetpack lift), A thrusts backward, Y is an
-air brake. SELECT respawns, START quits. To reach another planet: jump, pitch up, hold B to
-leave, then look at the target planet and hold B; near it turn around and hold B, or hold Y,
-to slow down before touching down.
+direction), B jumps, L/R orbit the camera. In the air the game switches to flight controls: B keeps thrusting up (away from gravity),
+the circle pad is a free look with no limits (up/down pitches, left/right turns, so you can
+loop), L/R roll, A boosts forward along the view, X thrusts backward, Y is an air brake.
+SELECT respawns, START quits. To reach another planet: jump and hold B to climb out, look at
+the target planet with the pad and hold A; near it turn around and hold A, or hold Y, to slow
+down before touching down. On landing the camera settles back to level.
 
 Physics: the player's velocity is stored relative to the dominant body, so standing on a
 moving planet is exact. Switching dominant body converts the velocity so world velocity is
