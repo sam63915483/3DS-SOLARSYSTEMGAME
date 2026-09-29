@@ -110,14 +110,64 @@ static uint32_t shade(uint32_t col, float k) {
     return ((uint32_t)r << 24) | ((uint32_t)g << 16) | ((uint32_t)b << 8) | 0xFF;
 }
 
-typedef struct { int trees, rocks, shards; uint32_t rock_col; } prop_plan;
+/* Open-ended tapered octagonal tube along `up`: radius r0 at the base, r1 at height h. 16 tris. */
+static void emit_taper(mesh *m, v3 base, v3 t1, v3 up, v3 t2, float r0, float r1, float h, uint32_t col) {
+    v3 ring0[8], ring1[8];
+    for (int k = 0; k < 8; k++) {
+        float a = k * (float)M_PI / 4, ca = cosf(a), sa = sinf(a);
+        ring0[k] = v3_add(base, v3_add(v3_scale(t1, r0 * ca), v3_scale(t2, r0 * sa)));
+        ring1[k] = v3_add(v3_add(base, v3_scale(up, h)), v3_add(v3_scale(t1, r1 * ca), v3_scale(t2, r1 * sa)));
+    }
+    v3 inside = v3_add(base, v3_scale(up, h * 0.5f));
+    for (int k = 0; k < 8; k++) {
+        int k1 = (k + 1) & 7;
+        emit_tri(m, ring0[k], ring0[k1], ring1[k1], inside, col);
+        emit_tri(m, ring0[k], ring1[k1], ring1[k], inside, col);
+    }
+}
+
+/* Cone without its base cap, 8 side tris, faces alternating between two tones. */
+static void emit_cone_open(mesh *m, v3 base, v3 t1, v3 up, v3 t2, float r, float h, uint32_t ca, uint32_t cb) {
+    v3 apex = v3_add(base, v3_scale(up, h)), inside = v3_add(base, v3_scale(up, h * 0.3f));
+    v3 ring[8];
+    for (int k = 0; k < 8; k++) {
+        float a = k * (float)M_PI / 4;
+        ring[k] = v3_add(base, v3_add(v3_scale(t1, r * cosf(a)), v3_scale(t2, r * sinf(a))));
+    }
+    for (int k = 0; k < 8; k++) emit_tri(m, ring[k], ring[(k + 1) & 7], apex, inside, (k & 1) ? ca : cb);
+}
+
+/* Lumpy low-poly blob: a 4x7 sphere with jittered radii, non-uniform scale, two tones. 42 tris. */
+static void emit_blob(mesh *m, v3 c, v3 t1, v3 up, v3 t2, float rx, float ry, float rz, float jitter,
+                      uint32_t ca, uint32_t cb, uint32_t seed) {
+    const int rings = 4, segs = 7;
+    v3 p[5][7];
+    for (int i = 0; i <= rings; i++) {
+        for (int j = 0; j < segs; j++) {
+            v3 d = sphere_pt(i, rings, j, segs);
+            float jit = 1.0f + (noise_hashf(i, j, 0, seed) - 0.5f) * 2.0f * jitter;
+            if (i == 0 || i == rings) jit = 1.0f + (noise_hashf(i, 0, 0, seed) - 0.5f) * jitter;
+            p[i][j] = v3_add(c, v3_add(v3_add(v3_scale(t1, d.x * rx * jit), v3_scale(up, d.y * ry * jit)), v3_scale(t2, d.z * rz * jit)));
+        }
+    }
+    for (int i = 0; i < rings; i++) {
+        for (int j = 0; j < segs; j++) {
+            int j1 = (j + 1) % segs;
+            uint32_t col = ((i + j) & 1) ? ca : cb;
+            if (i < rings - 1) emit_tri(m, p[i][j], p[i + 1][j1], p[i + 1][j], c, col);
+            if (i > 0) emit_tri(m, p[i][j], p[i][j1], p[i + 1][j1], c, col);
+        }
+    }
+}
+
+typedef struct { int trees, rocks, shards; uint32_t rock_a, rock_b; float rock_scale; } prop_plan;
 
 static prop_plan plan_for(terrain_kind t) {
-    prop_plan p = { 0, 0, 0, 0x787068FF };
+    prop_plan p = { 0, 0, 0, 0x787068FF, 0x625A50FF, 1.0f };
     switch (t) {
-    case TERRAIN_VERDANT: p.trees = 300; p.rocks = 150; p.rock_col = 0x7C7468FF; break;
-    case TERRAIN_EMBER:   p.rocks = 260; p.rock_col = 0x5E2D1EFF; break;
-    case TERRAIN_FROST:   p.rocks = 80; p.shards = 180; p.rock_col = 0xAAB8C8FF; break;
+    case TERRAIN_VERDANT: p.trees = 220; p.rocks = 110; p.rock_a = 0x8A8278FF; p.rock_b = 0x6E665CFF; break;
+    case TERRAIN_EMBER:   p.rocks = 190; p.rock_a = 0x6E3524FF; p.rock_b = 0x4E2418FF; p.rock_scale = 1.6f; break;
+    case TERRAIN_FROST:   p.rocks = 60; p.shards = 110; p.rock_a = 0xB4C2D2FF; p.rock_b = 0x94A6BAFF; break;
     default: break;
     }
     return p;
@@ -127,7 +177,7 @@ mesh mesh_props(const world *w, int bi) {
     const body *b = &w->b[bi];
     prop_plan plan = plan_for(b->terrain);
     mesh m = { 0, 0, 0, 0 };
-    int cap = plan.trees * 60 + plan.rocks * 24 + plan.shards * 24;
+    int cap = plan.trees * 200 + plan.rocks * 130 + plan.shards * 80;
     if (cap == 0) return m;
     m.v = calloc(cap, sizeof(vertex));
 
@@ -153,27 +203,148 @@ mesh mesh_props(const world *w, int bi) {
             v3 t2 = v3_cross(up, t1);
             v3 base = v3_scale(dir, b->radius + world_height(w, bi, dir));
             float s = 0.7f + noise_hashf(k, 4, kind, seed) * 0.7f;   /* size 0.7..1.4 */
+            uint32_t pseed = seed ^ (uint32_t)(k * 2654435761u);
 
             if (kind == 0) {
-                uint32_t greens[3] = { 0x3E8C3AFF, 0x4E9E3CFF, 0x2F7A38FF };
-                uint32_t canopy = greens[noise_hash(k, 5, kind, seed) % 3];
-                emit_box(&m, v3_add(base, v3_scale(up, 0.8f * s)), t1, up, t2, 0.2f * s, 0.8f * s, 0.2f * s, 0x6B4A2AFF);
-                emit_octa(&m, v3_add(base, v3_scale(up, (1.6f + 1.0f) * s)), t1, up, t2, 1.3f * s, 1.2f * s, 1.3f * s, canopy);
+                int conifer = noise_hashf(k, 5, kind, seed) < 0.6f;
+                uint32_t bark = shade(0x6B4A2AFF, 0.85f + noise_hashf(k, 6, kind, seed) * 0.3f);
+                if (conifer) {
+                    uint32_t ga = shade(0x2F7A38FF, 0.9f + noise_hashf(k, 7, kind, seed) * 0.25f), gb = shade(ga, 0.8f);
+                    emit_taper(&m, base, t1, up, t2, 0.16f * s, 0.10f * s, 1.1f * s, bark);
+                    emit_cone_open(&m, v3_add(base, v3_scale(up, 0.7f * s)), t1, up, t2, 1.05f * s, 1.5f * s, ga, gb);
+                    emit_cone_open(&m, v3_add(base, v3_scale(up, 1.5f * s)), t1, up, t2, 0.75f * s, 1.3f * s, ga, gb);
+                    emit_cone_open(&m, v3_add(base, v3_scale(up, 2.3f * s)), t1, up, t2, 0.45f * s, 1.0f * s, ga, gb);
+                } else {
+                    uint32_t ga = shade(0x4E9E3CFF, 0.9f + noise_hashf(k, 7, kind, seed) * 0.25f), gb = shade(ga, 0.78f);
+                    emit_taper(&m, base, t1, up, t2, 0.18f * s, 0.12f * s, 1.5f * s, bark);
+                    emit_blob(&m, v3_add(base, v3_scale(up, 2.3f * s)), t1, up, t2, 1.25f * s, 1.05f * s, 1.25f * s, 0.18f, ga, gb, pseed);
+                }
             } else if (kind == 1) {
-                float rx = (0.5f + noise_hashf(k, 6, kind, seed) * 1.3f) * s;
-                float ry = (0.4f + noise_hashf(k, 7, kind, seed) * 1.0f) * s;
-                float rz = (0.5f + noise_hashf(k, 8, kind, seed) * 1.3f) * s;
-                uint32_t col = shade(plan.rock_col, 0.85f + noise_hashf(k, 9, kind, seed) * 0.3f);
-                emit_octa(&m, v3_add(base, v3_scale(up, ry * 0.3f)), t1, up, t2, rx, ry, rz, col);
+                float rx = (0.5f + noise_hashf(k, 6, kind, seed) * 1.2f) * s * plan.rock_scale;
+                float ry = (0.4f + noise_hashf(k, 7, kind, seed) * 0.8f) * s * plan.rock_scale;
+                float rz = (0.5f + noise_hashf(k, 8, kind, seed) * 1.2f) * s * plan.rock_scale;
+                float tone = 0.85f + noise_hashf(k, 9, kind, seed) * 0.3f;
+                emit_blob(&m, v3_add(base, v3_scale(up, ry * 0.35f)), t1, up, t2, rx, ry, rz, 0.28f,
+                          shade(plan.rock_a, tone), shade(plan.rock_b, tone), pseed);
             } else {
-                float ry = (1.4f + noise_hashf(k, 6, kind, seed) * 1.8f) * s;
-                float rr = (0.3f + noise_hashf(k, 7, kind, seed) * 0.35f) * s;
-                v3 tilt = v3_rotate(up, t1, (noise_hashf(k, 8, kind, seed) - 0.5f) * 0.5f);
-                v3 tr = v3_norm(v3_cross(tilt, t2)), tf = v3_cross(tr, tilt);
-                emit_octa(&m, v3_add(base, v3_scale(tilt, ry * 0.6f)), tr, tilt, tf, rr, ry, rr, 0xC8E0F4FF);
+                /* a cluster of three tilted shards */
+                for (int c = 0; c < 3; c++) {
+                    float ry = (1.0f + noise_hashf(k, 6 + c, kind, seed) * 2.2f) * s;
+                    float rr = (0.22f + noise_hashf(k, 9 + c, kind, seed) * 0.3f) * s;
+                    v3 off = v3_add(v3_scale(t1, (noise_hashf(k, 12 + c, kind, seed) - 0.5f) * 1.6f * s),
+                                    v3_scale(t2, (noise_hashf(k, 15 + c, kind, seed) - 0.5f) * 1.6f * s));
+                    v3 tilt = v3_rotate(v3_rotate(up, t1, (noise_hashf(k, 18 + c, kind, seed) - 0.5f) * 0.6f),
+                                        t2, (noise_hashf(k, 21 + c, kind, seed) - 0.5f) * 0.6f);
+                    v3 tr = v3_norm(v3_cross(tilt, t2)), tf = v3_cross(tr, tilt);
+                    emit_octa(&m, v3_add(v3_add(base, off), v3_scale(tilt, ry * 0.55f)), tr, tilt, tf, rr, ry, rr,
+                              (c & 1) ? 0xC8E0F4FF : 0xA8C8E8FF);
+                }
             }
             placed++;
         }
+    }
+    return m;
+}
+
+/* ---- small shapes for the astronaut ---- */
+
+static const v3 AX = { 1, 0, 0 }, AY = { 0, 1, 0 }, AZ = { 0, 0, 1 };
+
+/* Octagonal prism: radius r around the y axis from y0 to y1. 16 side tris + 12 cap tris. */
+static void emit_prism(mesh *m, v3 c, float r, float y0, float y1, uint32_t col) {
+    v3 ring0[8], ring1[8];
+    for (int k = 0; k < 8; k++) {
+        float a = k * (float)M_PI / 4;
+        ring0[k] = v3_add(c, v3_(r * cosf(a), y0, r * sinf(a)));
+        ring1[k] = v3_add(c, v3_(r * cosf(a), y1, r * sinf(a)));
+    }
+    v3 inside = v3_add(c, v3_(0, (y0 + y1) / 2, 0));
+    for (int k = 0; k < 8; k++) {
+        int k1 = (k + 1) & 7;
+        emit_tri(m, ring0[k], ring0[k1], ring1[k1], inside, col);
+        emit_tri(m, ring0[k], ring1[k1], ring1[k], inside, col);
+    }
+    for (int k = 1; k < 7; k++) {
+        emit_tri(m, ring0[0], ring0[k], ring0[k + 1], inside, col);
+        emit_tri(m, ring1[0], ring1[k], ring1[k + 1], inside, col);
+    }
+}
+
+/* Low-poly sphere via emit_tri. 6 rings x 10 segments. */
+static void emit_sphere(mesh *m, v3 c, float r, uint32_t col) {
+    const int rings = 6, segs = 10;
+    for (int i = 0; i < rings; i++) {
+        for (int j = 0; j < segs; j++) {
+            v3 a = v3_add(c, v3_scale(sphere_pt(i, rings, j, segs), r));
+            v3 b = v3_add(c, v3_scale(sphere_pt(i + 1, rings, j, segs), r));
+            v3 cc = v3_add(c, v3_scale(sphere_pt(i + 1, rings, j + 1, segs), r));
+            v3 d = v3_add(c, v3_scale(sphere_pt(i, rings, j + 1, segs), r));
+            if (i < rings - 1) emit_tri(m, a, cc, b, c, col);
+            if (i > 0) emit_tri(m, a, d, cc, c, col);
+        }
+    }
+}
+
+static void emit_cone(mesh *m, v3 base, v3 axis, float r, float len, uint32_t col) {
+    v3 up = v3_norm(axis), t1 = v3_any_perp(up), t2 = v3_cross(up, t1);
+    v3 apex = v3_add(base, v3_scale(up, len)), inside = v3_add(base, v3_scale(up, len * 0.3f));
+    v3 ring[8];
+    for (int k = 0; k < 8; k++) {
+        float a = k * (float)M_PI / 4;
+        ring[k] = v3_add(base, v3_add(v3_scale(t1, r * cosf(a)), v3_scale(t2, r * sinf(a))));
+    }
+    for (int k = 0; k < 8; k++) emit_tri(m, ring[k], ring[(k + 1) & 7], apex, inside, col);
+    for (int k = 1; k < 7; k++) emit_tri(m, ring[0], ring[k], ring[k + 1], inside, col);
+}
+
+mesh mesh_cone(int segs, uint32_t col) {
+    (void)segs;
+    mesh m = { 0, 0, 0, 0 };
+    m.v = calloc(8 * 3 + 6 * 3, sizeof(vertex));
+    emit_cone(&m, v3_(0, 0, 0), AY, 1.0f, 1.0f, col);
+    return m;
+}
+
+#define SUIT   0xE8ECF2FF
+#define SUIT2  0xC9D0DAFF
+#define ACCENT 0xFF8A2AFF
+#define DARK   0x2A2E38FF
+#define METAL  0x8C949EFF
+#define TANK   0xB8C0C8FF
+#define VISOR  0x1E2A48FF
+
+mesh mesh_astronaut(astro_part part) {
+    mesh m = { 0, 0, 0, 0 };
+    m.v = calloc(2000, sizeof(vertex));
+    switch (part) {
+    case ASTRO_BODY:
+        /* torso, belt, chest panel */
+        emit_box(&m, v3_(0, 0.15f, 0), AX, AY, AZ, 0.30f, 0.30f, 0.18f, SUIT);
+        emit_box(&m, v3_(0, -0.14f, 0), AX, AY, AZ, 0.31f, 0.04f, 0.19f, DARK);
+        emit_box(&m, v3_(0, 0.20f, 0.19f), AX, AY, AZ, 0.15f, 0.12f, 0.025f, METAL);
+        emit_box(&m, v3_(0, 0.20f, 0.215f), AX, AY, AZ, 0.06f, 0.05f, 0.01f, ACCENT);
+        /* neck ring, helmet, visor */
+        emit_prism(&m, v3_(0, 0.44f, 0), 0.17f, 0, 0.06f, METAL);
+        emit_sphere(&m, v3_(0, 0.63f, 0), 0.27f, SUIT);
+        emit_box(&m, v3_(0, 0.65f, 0.20f), AX, AY, AZ, 0.16f, 0.09f, 0.06f, VISOR);
+        /* jetpack: plate, two tanks, nozzle */
+        emit_box(&m, v3_(0, 0.12f, -0.29f), AX, AY, AZ, 0.26f, 0.32f, 0.10f, METAL);
+        emit_prism(&m, v3_(-0.14f, 0, -0.45f), 0.09f, -0.15f, 0.42f, TANK);
+        emit_prism(&m, v3_(0.14f, 0, -0.45f), 0.09f, -0.15f, 0.42f, TANK);
+        emit_prism(&m, v3_(-0.14f, 0, -0.45f), 0.05f, 0.42f, 0.50f, ACCENT);
+        emit_prism(&m, v3_(0.14f, 0, -0.45f), 0.05f, 0.42f, 0.50f, ACCENT);
+        emit_cone(&m, v3_(0, -0.20f, -0.34f), v3_(0, -1, 0), 0.09f, 0.10f, DARK);
+        break;
+    case ASTRO_ARM:
+        emit_box(&m, v3_(0, -0.18f, 0), AX, AY, AZ, 0.09f, 0.18f, 0.09f, SUIT);
+        emit_box(&m, v3_(0, -0.50f, 0), AX, AY, AZ, 0.08f, 0.16f, 0.08f, SUIT2);
+        emit_box(&m, v3_(0, -0.74f, 0), AX, AY, AZ, 0.09f, 0.08f, 0.09f, ACCENT);
+        break;
+    case ASTRO_LEG:
+        emit_box(&m, v3_(0, -0.20f, 0), AX, AY, AZ, 0.13f, 0.20f, 0.14f, SUIT);
+        emit_box(&m, v3_(0, -0.56f, 0), AX, AY, AZ, 0.11f, 0.17f, 0.12f, SUIT2);
+        emit_box(&m, v3_(0, -0.80f, 0.04f), AX, AY, AZ, 0.13f, 0.07f, 0.18f, DARK);
+        break;
     }
     return m;
 }

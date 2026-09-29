@@ -23,6 +23,13 @@ mesh mesh_planet(const world *w, int i, int rings, int segs);
 mesh mesh_props(const world *w, int i);
 /* Axis-aligned box centred on the origin. */
 mesh mesh_box(float sx, float sy, float sz, uint32_t col);
+/* Unit cone: base circle of radius 1 at y = 0, apex at y = 1. */
+mesh mesh_cone(int segs, uint32_t col);
+/* Astronaut parts in model space: +y up, +z forward, origin at the middle of the body.
+   The body includes helmet, torso and jetpack. Arm and leg hang from the origin (their pivot)
+   along -y and are meant to be drawn at the shoulder / hip. */
+typedef enum { ASTRO_BODY, ASTRO_ARM, ASTRO_LEG } astro_part;
+mesh mesh_astronaut(astro_part part);
 /* n small triangles scattered on a sphere of the given radius. */
 mesh mesh_stars(int n, float radius, float size, uint32_t seed);
 void mesh_free(mesh *m);

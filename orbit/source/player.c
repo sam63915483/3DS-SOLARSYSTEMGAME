@@ -33,6 +33,7 @@ void player_spawn(player *p, const world *w, int body) {
     p->move_dir = v3_(0, 0, 0);
     p->speed = 0;
     p->altitude = 0;
+    p->anim = 0;
 }
 
 static void switch_frame(player *p, const world *w, int to) {
@@ -129,6 +130,7 @@ void player_update(player *p, const world *w, const player_input *in, float dt) 
     p->facing = v3_len(p->facing) < 1e-3f ? fwd : v3_norm(p->facing);
 
     p->speed = v3_len(p->vel);
+    if (p->grounded) p->anim += p->speed * 1.6f * dt;   /* walk cycle */
     p->altitude = v3_len(v3_sub(p->pos, dom->pos)) - world_surface(w, p->dom, p->up) - PLAYER_HALF_HEIGHT;
     if (p->grounded || fabsf(p->altitude) < 0.01f) p->altitude = 0;   /* no -0.0 flicker on the HUD */
 }

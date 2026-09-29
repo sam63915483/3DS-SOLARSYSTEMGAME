@@ -23,7 +23,7 @@ static C3D_LightEnv lightEnv;
 static C3D_Light light;
 static C3D_LightLut lutPhong;
 
-static gpu_mesh bodies[BODY_COUNT], props[BODY_COUNT], body_box, head_box, visor_box, pack_box, flame_box, stars;
+static gpu_mesh bodies[BODY_COUNT], props[BODY_COUNT], astro_body, astro_arm, astro_leg, flame_outer, flame_inner, stars;
 
 static const C3D_Material mat_lit = {
     { 0.30f, 0.30f, 0.36f },  /* ambient */
@@ -84,11 +84,11 @@ void render_init(const world *w) {
         props[i] = upload(mesh_props(w, i));
     }
     /* player: model +z is forward, +y is up, origin at the middle of the 1.8 tall body */
-    body_box = upload(mesh_box(0.8f, 1.3f, 0.5f, 0xE8E8F0FF));
-    head_box = upload(mesh_box(0.5f, 0.45f, 0.5f, 0xF0C8A0FF));
-    visor_box = upload(mesh_box(0.36f, 0.16f, 0.1f, 0x203050FF));
-    pack_box = upload(mesh_box(0.6f, 0.8f, 0.3f, 0x808890FF));
-    flame_box = upload(mesh_box(1.0f, 1.0f, 1.0f, 0xFF9020FF));   /* scaled per jet */
+    astro_body = upload(mesh_astronaut(ASTRO_BODY));
+    astro_arm = upload(mesh_astronaut(ASTRO_ARM));
+    astro_leg = upload(mesh_astronaut(ASTRO_LEG));
+    flame_outer = upload(mesh_cone(8, 0xFF7A1AFF));   /* unit cones, scaled per jet */
+    flame_inner = upload(mesh_cone(8, 0xFFE878FF));
     stars = upload(mesh_stars(360, STAR_RADIUS, 14.0f, 20260929u));
 }
 
@@ -146,16 +146,31 @@ static void mtx_basis(C3D_Mtx *m, v3 right, v3 up, v3 fwd, v3 p) {
     m->r[3] = FVec4_New(0, 0, 0, 1);
 }
 
-/* A flame in model space: starts at origin_m and extends along dir_m for len. */
+/* A flame in model space: a two-tone cone from origin_m along dir_m, flickering. */
 static void draw_jet(const C3D_Mtx *base, v3 origin_m, v3 dir_m, float len, float time, float phase) {
-    len *= 0.8f + 0.2f * sinf(time * 37.0f + phase);
+    float flick = 0.8f + 0.2f * sinf(time * 37.0f + phase) + 0.08f * sinf(time * 91.0f + phase * 2.0f);
+    len *= flick;
     v3 up = v3_norm(dir_m);
     v3 fwd = v3_any_perp(up), right = v3_cross(up, fwd);
     C3D_Mtx local, m;
-    mtx_basis(&local, right, up, fwd, v3_add(origin_m, v3_scale(up, len * 0.5f)));
-    Mtx_Scale(&local, 0.26f, len, 0.26f);
+    mtx_basis(&local, right, up, fwd, origin_m);
+    Mtx_Scale(&local, 0.13f * flick, len, 0.13f * flick);
     Mtx_Multiply(&m, base, &local);
-    draw(&flame_box, &m, &mat_glow);
+    draw(&flame_outer, &m, &mat_glow);
+    mtx_basis(&local, right, up, fwd, v3_add(origin_m, v3_scale(up, 0.02f)));
+    Mtx_Scale(&local, 0.07f, len * 0.6f, 0.07f);
+    Mtx_Multiply(&m, base, &local);
+    draw(&flame_inner, &m, &mat_glow);
+}
+
+/* One limb: pivot offset in model space, swung around the model's x axis. */
+static void draw_limb(const gpu_mesh *g, const C3D_Mtx *base, v3 pivot, float swing, float splay) {
+    C3D_Mtx off, m;
+    mtx_translate(&off, pivot);
+    Mtx_RotateX(&off, swing, true);
+    if (splay != 0) Mtx_RotateZ(&off, splay, true);
+    Mtx_Multiply(&m, base, &off);
+    draw(g, &m, &mat_lit);
 }
 
 static void draw_player(const player *p, const camera *c, float time) {
@@ -170,26 +185,39 @@ static void draw_player(const player *p, const camera *c, float time) {
     C3D_Mtx base, m, off;
     mtx_basis(&base, right, up, fwd, p->pos);
 
-    mtx_translate(&off, v3_(0, -0.25f, 0));  Mtx_Multiply(&m, &base, &off); draw(&body_box, &m, &mat_lit);
-    mtx_translate(&off, v3_(0, 0.67f, 0));   Mtx_Multiply(&m, &base, &off); draw(&head_box, &m, &mat_lit);
-    mtx_translate(&off, v3_(0, 0.70f, 0.28f)); Mtx_Multiply(&m, &base, &off); draw(&visor_box, &m, &mat_lit);
-    mtx_translate(&off, v3_(0, -0.15f, -0.38f)); Mtx_Multiply(&m, &base, &off); draw(&pack_box, &m, &mat_lit);
+    (void)m; (void)off;
+    draw(&astro_body, &base, &mat_lit);
 
-    /* jets: exhaust goes opposite to the thrust. pack spans y -0.55..0.25, z -0.53..-0.23 */
-    if (p->jet_up)   draw_jet(&base, v3_(0, -0.55f, -0.38f), v3_(0, -1, 0), 0.9f, time, 0);
-    if (p->jet_down) draw_jet(&base, v3_(0, 0.25f, -0.38f), v3_(0, 1, 0), 0.7f, time, 1);
-    if (p->jet_fwd)  draw_jet(&base, v3_(0, -0.15f, -0.53f), v3_(0, 0, -1), 1.0f, time, 2);
+    /* limbs: walk cycle on the ground, swept back in flight */
+    float swing, arm_swing, arm_splay, leg_back;
+    if (p->grounded) {
+        float k = p->speed / 8.0f; if (k > 1) k = 1;
+        swing = sinf(p->anim) * 0.7f * k;
+        arm_swing = -swing * 0.7f; arm_splay = 0.12f; leg_back = 0;
+    } else {
+        swing = 0; arm_swing = -0.55f; arm_splay = 0.35f; leg_back = -0.3f;
+    }
+    draw_limb(&astro_leg, &base, v3_(-0.17f, -0.15f, 0), swing + leg_back, 0);
+    draw_limb(&astro_leg, &base, v3_(0.17f, -0.15f, 0), -swing + leg_back, 0);
+    draw_limb(&astro_arm, &base, v3_(-0.40f, 0.40f, 0), arm_swing, arm_splay);
+    draw_limb(&astro_arm, &base, v3_(0.40f, 0.40f, 0), -arm_swing * (p->grounded ? 1 : -1), -arm_splay);
+
+    /* jets: exhaust goes opposite to the thrust. pack plate spans y -0.2..0.44, z -0.39..-0.19;
+       the nozzle is at the bottom centre, the tanks top out at y 0.5 */
+    if (p->jet_up)   draw_jet(&base, v3_(0, -0.30f, -0.34f), v3_(0, -1, 0), 1.0f, time, 0);
+    if (p->jet_down) draw_jet(&base, v3_(0, 0.50f, -0.34f), v3_(0, 1, 0), 0.8f, time, 1);
+    if (p->jet_fwd)  draw_jet(&base, v3_(0, 0.12f, -0.40f), v3_(0, 0, -1), 1.1f, time, 2);
     if (v3_len(p->brake_dir) > 0.5f) {
-        /* brake: exhaust along the direction of travel, expressed in the model's frame */
+        /* brake: exhaust along the direction of travel, expressed in the model frame */
         v3 dm = v3_(v3_dot(p->brake_dir, right), v3_dot(p->brake_dir, up), v3_dot(p->brake_dir, fwd));
-        draw_jet(&base, v3_(0, -0.15f, -0.38f), dm, 0.9f, time, 5);
+        draw_jet(&base, v3_(0, 0.12f, -0.34f), dm, 1.0f, time, 5);
     }
     if (p->jet_roll > 0.05f) {   /* roll right: left shoulder fires up-left, right hip fires down-right */
-        draw_jet(&base, v3_(-0.42f, 0.25f, -0.38f), v3_(-1, 1, 0), 0.5f, time, 3);
-        draw_jet(&base, v3_(0.42f, -0.55f, -0.38f), v3_(1, -1, 0), 0.5f, time, 4);
+        draw_jet(&base, v3_(-0.28f, 0.44f, -0.34f), v3_(-1, 1, 0), 0.55f, time, 3);
+        draw_jet(&base, v3_(0.28f, -0.20f, -0.34f), v3_(1, -1, 0), 0.55f, time, 4);
     } else if (p->jet_roll < -0.05f) {
-        draw_jet(&base, v3_(0.42f, 0.25f, -0.38f), v3_(1, 1, 0), 0.5f, time, 3);
-        draw_jet(&base, v3_(-0.42f, -0.55f, -0.38f), v3_(-1, -1, 0), 0.5f, time, 4);
+        draw_jet(&base, v3_(0.28f, 0.44f, -0.34f), v3_(1, 1, 0), 0.55f, time, 3);
+        draw_jet(&base, v3_(-0.28f, -0.20f, -0.34f), v3_(-1, -1, 0), 0.55f, time, 4);
     }
 }
 
@@ -219,15 +247,18 @@ void render_scene(const world *w, const player *p, const camera *c, float time) 
     for (int i = 0; i < BODY_COUNT; i++) {
         mtx_translate(&model, w->b[i].pos);
         draw(&bodies[i], &model, w->b[i].emissive ? &mat_glow : &mat_lit);
-        if (props[i].count) draw(&props[i], &model, &mat_lit);
+        /* props are a few units tall: skip them once the planet is far enough that they
+           would be smaller than a pixel anyway */
+        float gap = v3_len(v3_sub(c->pos, w->b[i].pos)) - w->b[i].radius;
+        if (props[i].count && gap < 700.0f) draw(&props[i], &model, &mat_lit);
     }
     draw_player(p, c, time);
 }
 
 void render_fini(void) {
     for (int i = 0; i < BODY_COUNT; i++) { gpu_free(&bodies[i]); gpu_free(&props[i]); }
-    gpu_free(&body_box); gpu_free(&head_box); gpu_free(&visor_box);
-    gpu_free(&pack_box); gpu_free(&flame_box); gpu_free(&stars);
+    gpu_free(&astro_body); gpu_free(&astro_arm); gpu_free(&astro_leg);
+    gpu_free(&flame_outer); gpu_free(&flame_inner); gpu_free(&stars);
     shaderProgramFree(&program);
     DVLB_Free(dvlb);
 }

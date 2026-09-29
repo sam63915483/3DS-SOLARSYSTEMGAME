@@ -19,6 +19,7 @@ typedef struct {
     v3 move_dir;     /* world-space input direction from the last update (0 if none) */
     float speed;     /* |vel| for the HUD */
     float altitude;  /* height above the dominant body's surface */
+    float anim;      /* walk cycle phase, advances with ground speed */
 } player;
 
 typedef struct {
