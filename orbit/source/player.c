@@ -112,4 +112,5 @@ void player_update(player *p, const world *w, const player_input *in, float dt) 
 
     p->speed = v3_len(p->vel);
     p->altitude = v3_len(v3_sub(p->pos, dom->pos)) - dom->radius - PLAYER_HALF_HEIGHT;
+    if (p->grounded || fabsf(p->altitude) < 0.01f) p->altitude = 0;   /* no -0.0 flicker on the HUD */
 }
