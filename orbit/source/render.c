@@ -65,7 +65,7 @@ void render_init(const world *w) {
 
     for (int i = 0; i < BODY_COUNT; i++) {
         const body *b = &w->b[i];
-        int rings = i == BODY_SUN ? 24 : 16, segs = i == BODY_SUN ? 32 : 24;
+        int rings = i == BODY_SUN ? 32 : 24, segs = i == BODY_SUN ? 48 : 36;
         bodies[i] = upload(mesh_sphere(b->radius, rings, segs, b->color_a, b->color_b));
     }
     /* player: model +z is forward, +y is up, origin at the middle of the 1.8 tall body */
@@ -73,7 +73,7 @@ void render_init(const world *w) {
     head_box = upload(mesh_box(0.5f, 0.45f, 0.5f, 0xF0C8A0FF));
     visor_box = upload(mesh_box(0.36f, 0.16f, 0.1f, 0x203050FF));
     pack_box = upload(mesh_box(0.6f, 0.8f, 0.3f, 0x808890FF));
-    flame_box = upload(mesh_box(0.35f, 0.7f, 0.35f, 0xFF9020FF));
+    flame_box = upload(mesh_box(1.0f, 1.0f, 1.0f, 0xFF9020FF));   /* scaled per jet */
     stars = upload(mesh_stars(360, STAR_RADIUS, 14.0f, 20260929u));
 }
 
@@ -130,7 +130,21 @@ static void mtx_basis(C3D_Mtx *m, v3 right, v3 up, v3 fwd, v3 p) {
     m->r[3] = FVec4_New(0, 0, 0, 1);
 }
 
-static void draw_player(const player *p, const camera *c) {
+/* A flame in model space: starts at origin_m and extends along dir_m for len. */
+static void draw_jet(const C3D_Mtx *base, v3 origin_m, v3 dir_m, float len, float time, float phase) {
+    len *= 0.8f + 0.2f * sinf(time * 37.0f + phase);
+    v3 up = v3_norm(dir_m);
+    v3 fwd = v3_any_perp(up), right = v3_cross(up, fwd);
+    C3D_Mtx local, m;
+    mtx_basis(&local, right, up, fwd, v3_add(origin_m, v3_scale(up, len * 0.5f)));
+    Mtx_Scale(&local, 0.26f, len, 0.26f);
+    Mtx_Multiply(&m, base, &local);
+    draw(&flame_box, &m, &mat_glow);
+}
+
+static void draw_player(const player *p, const camera *c, float time) {
+    if (c->fp > 0.6f) return;   /* first person: no model in the way */
+
     /* the model uses the camera's smoothed basis so both roll together when "up" changes;
        in flight it points along the view like a ship */
     v3 up = p->grounded ? c->up : c->view_up;
@@ -144,12 +158,21 @@ static void draw_player(const player *p, const camera *c) {
     mtx_translate(&off, v3_(0, 0.67f, 0));   Mtx_Multiply(&m, &base, &off); draw(&head_box, &m, &mat_lit);
     mtx_translate(&off, v3_(0, 0.70f, 0.28f)); Mtx_Multiply(&m, &base, &off); draw(&visor_box, &m, &mat_lit);
     mtx_translate(&off, v3_(0, -0.15f, -0.38f)); Mtx_Multiply(&m, &base, &off); draw(&pack_box, &m, &mat_lit);
-    if (p->thrusting) {
-        mtx_translate(&off, v3_(0, -0.85f, -0.38f)); Mtx_Multiply(&m, &base, &off); draw(&flame_box, &m, &mat_glow);
+
+    /* jets: exhaust goes opposite to the thrust. pack spans y -0.55..0.25, z -0.53..-0.23 */
+    if (p->jet_up)   draw_jet(&base, v3_(0, -0.55f, -0.38f), v3_(0, -1, 0), 0.9f, time, 0);
+    if (p->jet_down) draw_jet(&base, v3_(0, 0.25f, -0.38f), v3_(0, 1, 0), 0.7f, time, 1);
+    if (p->jet_fwd)  draw_jet(&base, v3_(0, -0.15f, -0.53f), v3_(0, 0, -1), 1.0f, time, 2);
+    if (p->jet_roll > 0.05f) {   /* roll right: left shoulder fires up-left, right hip fires down-right */
+        draw_jet(&base, v3_(-0.42f, 0.25f, -0.38f), v3_(-1, 1, 0), 0.5f, time, 3);
+        draw_jet(&base, v3_(0.42f, -0.55f, -0.38f), v3_(1, -1, 0), 0.5f, time, 4);
+    } else if (p->jet_roll < -0.05f) {
+        draw_jet(&base, v3_(0.42f, 0.25f, -0.38f), v3_(1, 1, 0), 0.5f, time, 3);
+        draw_jet(&base, v3_(-0.42f, -0.55f, -0.38f), v3_(-1, -1, 0), 0.5f, time, 4);
     }
 }
 
-void render_scene(const world *w, const player *p, const camera *c) {
+void render_scene(const world *w, const player *p, const camera *c, float time) {
     C3D_RenderTargetClear(top, C3D_CLEAR_ALL, 0x02020AFF, 0);
     C3D_FrameDrawOn(top);
     prepare_state();
@@ -176,7 +199,7 @@ void render_scene(const world *w, const player *p, const camera *c) {
         mtx_translate(&model, w->b[i].pos);
         draw(&bodies[i], &model, w->b[i].emissive ? &mat_glow : &mat_lit);
     }
-    draw_player(p, c);
+    draw_player(p, c, time);
 }
 
 void render_fini(void) {

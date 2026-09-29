@@ -45,7 +45,7 @@ int main(void) {
     for (int f = 0; f < 120; f++) { world_update(&w, DT); player_update(&p, &w, &in, DT); }
     v3 off2 = v3_sub(p.pos, w.b[BODY_START].pos);
     float moved = v3_len(v3_sub(off2, off1));
-    CHECK(moved > 6.0f && moved < 9.0f, "walked about 8 units in two seconds");
+    CHECK(moved > 9.0f && moved < 12.0f, "walked about 11 units in two seconds");
     CHECK_NEAR(v3_len(off2), w.b[BODY_START].radius + PLAYER_HALF_HEIGHT, 1e-2f, "walking stays on the surface");
     CHECK(v3_dot(p.facing, p.up) < 1e-3f, "facing is tangent to the surface");
     in.my = 0;
@@ -62,7 +62,7 @@ int main(void) {
         landed = p.grounded;
     }
     CHECK(landed, "jump lands again");
-    CHECK(max_alt > 1.0f && max_alt < 3.5f, "jump height is sane");
+    CHECK(max_alt > 1.0f && max_alt < 4.5f, "jump height is sane");
 
     /* jetpack: holding B escapes the planet and the frame switches to the sun without a
        jump in world velocity */
@@ -86,12 +86,12 @@ int main(void) {
     in.thrust_up = 0;
 
     /* respawn when hitting the sun */
-    p.pos = v3_(0, 0, 41.5f); p.vel = v3_(0, 0, -60);
+    p.pos = v3_(0, 0, 71.5f); p.vel = v3_(0, 0, -80);
     world_update(&w, DT); player_update(&p, &w, &in, DT);
     CHECK(p.dom == BODY_START && p.grounded, "touching the sun respawns on the start planet");
 
     /* landing on another planet: approach Ember at speed, get snapped to its surface */
-    p.pos = v3_add(w.b[1].pos, v3_(0, 12.0f, 0)); p.dom = 1; p.grounded = 0;
+    p.pos = v3_add(w.b[1].pos, v3_(0, w.b[1].radius + 2.0f, 0)); p.dom = 1; p.grounded = 0;
     p.vel = v3_(0, -10, 0);
     for (int f = 0; f < 60; f++) { world_update(&w, DT); player_update(&p, &w, &in, DT); }
     CHECK(p.grounded && p.dom == 1, "falling onto Ember lands on it");

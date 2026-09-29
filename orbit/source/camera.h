@@ -9,7 +9,11 @@ typedef struct {
     v3 pos, target;   /* result for the view matrix */
     float ground_pitch; /* d-pad look up/down on the ground, radians */
     int was_grounded;
+    int first_person;   /* requested view */
+    float fp;           /* 0 = third person, 1 = inside the head, eased between */
 } camera;
+
+void camera_toggle_view(camera *c);
 
 typedef struct {
     float turn;    /* -1..1: yaw from the d-pad on the ground, roll from L/R in flight */

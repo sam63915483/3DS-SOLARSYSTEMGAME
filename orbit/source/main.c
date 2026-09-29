@@ -65,19 +65,27 @@ int main(void) {
             in.thrust_fwd = (kHeld & KEY_A) != 0;
             in.thrust_down = (kHeld & KEY_B) != 0;
             in.brake = (kHeld & KEY_Y) != 0;
+            in.roll = cin.turn;
         }
         in.cam_forward = cam.fwd;
         in.view_forward = cam.view;
+        if (kDown & KEY_TOUCH) {
+            touchPosition tp; hidTouchRead(&tp);
+            if (hud_view_button_hit(tp.px, tp.py)) camera_toggle_view(&cam);
+        }
 
         world_update(&w, dt);
         player_update(&p, &w, &in, dt);
         camera_update(&cam, &w, &p, &cin, dt);
 
         C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
-        render_scene(&w, &p, &cam);
+        render_scene(&w, &p, &cam, w.t);
         C3D_LightEnvBind(NULL);
         C2D_Prepare();
-        hud_draw(bottom, &w, &p, fps);
+        /* the 3D pass turns blending off; text and sprites need it back */
+        C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA,
+                       GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA);
+        hud_draw(bottom, &w, &p, &cam, fps);
         C2D_Flush();
         C3D_FrameEnd(0);
     }

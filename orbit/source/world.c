@@ -12,10 +12,10 @@ static void body_place(body *b, float t) {
 
 void world_init(world *w) {
     static const body defs[BODY_COUNT] = {
-        { "Sun",     40.0f, MU_SUN,  0,      0.0f, 0, 0xFFE070FF, 0xFFC848FF, 1, {0,0,0}, {0,0,0}, {0,0,0} },
-        { "Ember",   10.0f, 1500.0f, 200.0f, 0.6f, 0, 0xC84828FF, 0x8A2E18FF, 0, {0,0,0}, {0,0,0}, {0,0,0} },
-        { "Verdant", 16.0f, 3328.0f, 340.0f, 2.4f, 0, 0x3A9A4AFF, 0x2A6C9AFF, 0, {0,0,0}, {0,0,0}, {0,0,0} },
-        { "Frost",   12.0f, 2016.0f, 520.0f, 4.4f, 0, 0xD8E8F4FF, 0x8AAEC8FF, 0, {0,0,0}, {0,0,0}, {0,0,0} },
+        { "Sun",     70.0f, MU_SUN,  0,      0.0f, 0, 0xFFE070FF, 0xFFC848FF, 1, {0,0,0}, {0,0,0}, {0,0,0} },
+        { "Ember",   20.0f, 6000.0f, 200.0f, 0.6f, 0, 0xC84828FF, 0x8A2E18FF, 0, {0,0,0}, {0,0,0}, {0,0,0} },
+        { "Verdant", 32.0f, 13312.0f, 340.0f, 2.4f, 0, 0x3A9A4AFF, 0x2A6C9AFF, 0, {0,0,0}, {0,0,0}, {0,0,0} },
+        { "Frost",   24.0f, 8064.0f, 520.0f, 4.4f, 0, 0xD8E8F4FF, 0x8AAEC8FF, 0, {0,0,0}, {0,0,0}, {0,0,0} },
     };
     w->t = 0;
     for (int i = 0; i < BODY_COUNT; i++) {

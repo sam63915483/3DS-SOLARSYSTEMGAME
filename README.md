@@ -144,6 +144,10 @@ Layout: `orbit/source/vec.h`, `world.c`, `player.c`, `camera.c`, `mesh.c` are po
 fragment lighting with the sun as the point light), `hud.c` is the citro2d bottom screen,
 `main.c` the loop.
 
+Bottom screen: a VIEW touch button at the top right switches between third person and first
+person with a smooth zoom into and out of the head. Text uses a built-in 5x7 pixel font
+(`orbit/source/font.c`), so it renders in the emulator without a system font dump.
+
 Controls on the ground: circle pad walks (camera relative, the player turns to face the
 direction), X jumps, the D-pad looks around (left/right orbit, up/down pitch) and walking eases
 the camera back behind you. In the air the game switches to flight controls:
@@ -158,6 +162,7 @@ moving planet is exact. Switching dominant body converts the velocity so world v
 continuous. Planet orbital speed is derived from the sun's gravity, so the sun's pull on the
 player in a planet's frame is only the tidal remainder. Touching the sun respawns you.
 
-Azahar notes: renders at 60 fps. The bottom-screen text shows as boxes in Azahar on this PC
-because the emulator has no dumped system font; on the console the text is the real font.
+Azahar notes: renders at 60 fps. Note for anyone mixing citro3d and citro2d: the 3D pass
+sets an opaque blend mode and citro2d does not restore it, so re-enable alpha blending
+before the 2D pass or every glyph and sprite draws as a solid block.
 Azahar keys: arrows = circle pad, S = B, A = A, Z = X, X = Y, Q/W = L/R, N = SELECT, M = START.

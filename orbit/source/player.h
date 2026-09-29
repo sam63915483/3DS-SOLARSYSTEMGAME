@@ -10,7 +10,9 @@ typedef struct {
     v3 vel;          /* relative to the dominant body */
     int dom;         /* dominant body index */
     int grounded;
-    int thrusting;   /* jetpack flame on */
+    int thrusting;   /* any jet firing */
+    int jet_up, jet_down, jet_fwd;  /* which jets are firing this frame */
+    float jet_roll;  /* -1..1 roll jets (visual only) */
     v3 up;           /* away from the dominant body */
     v3 facing;       /* unit tangent, where the model looks on the ground */
     v3 move_dir;     /* world-space input direction from the last update (0 if none) */
@@ -25,6 +27,7 @@ typedef struct {
     int thrust_up;     /* X held in the air: thrust away from gravity */
     int thrust_down;   /* B held in the air: thrust toward gravity */
     int brake;         /* Y held in the air: bleed relative velocity */
+    float roll;        /* -1..1 from L/R in the air, only drives the roll jets */
     v3 cam_forward;    /* camera heading, any length; walking is relative to it */
     v3 view_forward;   /* unit vector the camera looks along, including pitch */
 } player_input;

@@ -15,16 +15,33 @@ static void orthonormalize(camera *c) {
     c->view_up = v3_len(c->view_up) < 1e-4f ? v3_any_perp(c->view) : v3_norm(c->view_up);
 }
 
-static void place(camera *c, const world *w, const player *p) {
-    c->pos = v3_add(v3_add(p->pos, v3_scale(c->view_up, CAM_UP)), v3_scale(c->view, -CAM_BACK));
-    c->target = v3_add(p->pos, v3_scale(c->view_up, 1.0f));
+#define EYE_HEIGHT 0.72f
+#define VIEW_SWITCH_TIME 0.6f
 
-    /* keep the camera out of the ground */
+static void place(camera *c, const world *w, const player *p, float dt) {
+    /* third person: behind and above, kept out of the ground */
+    v3 tp_pos = v3_add(v3_add(p->pos, v3_scale(c->view_up, CAM_UP)), v3_scale(c->view, -CAM_BACK));
+    v3 tp_target = v3_add(p->pos, v3_scale(c->view_up, 1.0f));
     const body *b = &w->b[p->dom];
-    v3 d = v3_sub(c->pos, b->pos);
+    v3 d = v3_sub(tp_pos, b->pos);
     float dist = v3_len(d), min = b->radius + 0.6f;
-    if (dist < min) c->pos = v3_add(b->pos, v3_scale(d, min / dist));
+    if (dist < min) tp_pos = v3_add(b->pos, v3_scale(d, min / dist));
+
+    /* first person: at the eyes, looking along the view */
+    v3 fp_pos = v3_add(p->pos, v3_scale(c->view_up, EYE_HEIGHT));
+    v3 fp_target = v3_add(fp_pos, c->view);
+
+    /* ease between them */
+    float goal = c->first_person ? 1.0f : 0.0f;
+    float step = dt / VIEW_SWITCH_TIME;
+    if (c->fp < goal) { c->fp += step; if (c->fp > goal) c->fp = goal; }
+    if (c->fp > goal) { c->fp -= step; if (c->fp < goal) c->fp = goal; }
+    float s = c->fp * c->fp * (3.0f - 2.0f * c->fp);   /* smoothstep */
+    c->pos = v3_lerp(tp_pos, fp_pos, s);
+    c->target = v3_lerp(tp_target, fp_target, s);
 }
+
+void camera_toggle_view(camera *c) { c->first_person = !c->first_person; }
 
 void camera_init(camera *c, const player *p) {
     c->up = p->up;
@@ -32,6 +49,8 @@ void camera_init(camera *c, const player *p) {
     c->view = c->fwd;
     c->view_up = c->up;
     c->ground_pitch = 0;
+    c->first_person = 0;
+    c->fp = 0;
     c->was_grounded = p->grounded;
     c->pos = v3_add(v3_add(p->pos, v3_scale(c->up, CAM_UP)), v3_scale(c->fwd, -CAM_BACK));
     c->target = p->pos;
@@ -93,5 +112,5 @@ void camera_update(camera *c, const world *w, const player *p, const camera_inpu
         if (v3_len(h) > 1e-3f) c->fwd = v3_norm(h);
     }
     c->was_grounded = p->grounded;
-    place(c, w, p);
+    place(c, w, p, dt);
 }
