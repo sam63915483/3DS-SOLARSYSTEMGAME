@@ -1,0 +1,6 @@
+{
+  "name": "sk1-3ds-mockup",
+  "private": true,
+  "type": "module",
+  "scripts": { "start": "node serve.js" }
+}

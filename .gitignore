@@ -1,0 +1,7 @@
+app/build/
+app/*.3dsx
+app/*.smdh
+app/*.elf
+app/*.map
+scratch-mic/
+node_modules/
