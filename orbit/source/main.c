@@ -44,22 +44,32 @@ int main(void) {
         fps += ((1.0f / dt) - fps) * 0.05f;
 
         circlePosition cp; hidCircleRead(&cp);
+        float px = pad_axis(cp.dx), py = pad_axis(cp.dy);
+        if (sqrtf(px * px + py * py) < 0.18f) px = py = 0;
+
         player_input in;
         memset(&in, 0, sizeof in);
-        in.mx = pad_axis(cp.dx);
-        in.my = pad_axis(cp.dy);
-        float mag = sqrtf(in.mx * in.mx + in.my * in.my);
-        if (mag < 0.18f) in.mx = in.my = 0;
-        in.jump_pressed = (kDown & KEY_B) != 0;
-        in.thrust_up = (kHeld & KEY_B) != 0;
-        in.thrust_down = (kHeld & KEY_A) != 0;
-        in.brake = (kHeld & KEY_Y) != 0;
+        camera_input cin;
+        memset(&cin, 0, sizeof cin);
+        cin.turn = ((kHeld & KEY_R) ? 1.0f : 0.0f) - ((kHeld & KEY_L) ? 1.0f : 0.0f);
+        if (p.grounded) {
+            /* walk with the pad, B jumps */
+            in.mx = px; in.my = py;
+            in.jump_pressed = (kDown & KEY_B) != 0;
+        } else {
+            /* flight: the pad looks around, buttons thrust */
+            cin.look_x = px; cin.look_y = py;
+            in.thrust_fwd = (kHeld & KEY_B) != 0;
+            in.thrust_up = (kHeld & KEY_X) != 0;
+            in.thrust_back = (kHeld & KEY_A) != 0;
+            in.brake = (kHeld & KEY_Y) != 0;
+        }
         in.cam_forward = cam.fwd;
-        float turn = ((kHeld & KEY_R) ? 1.0f : 0.0f) - ((kHeld & KEY_L) ? 1.0f : 0.0f);
+        in.view_forward = cam.view;
 
         world_update(&w, dt);
         player_update(&p, &w, &in, dt);
-        camera_update(&cam, &w, &p, turn, dt);
+        camera_update(&cam, &w, &p, &cin, dt);
 
         C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
         render_scene(&w, &p, &cam);

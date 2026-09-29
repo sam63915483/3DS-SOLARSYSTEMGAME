@@ -131,9 +131,10 @@ static void mtx_basis(C3D_Mtx *m, v3 right, v3 up, v3 fwd, v3 p) {
 }
 
 static void draw_player(const player *p, const camera *c) {
-    /* the model uses the camera's smoothed up so both roll together when "up" changes */
-    v3 up = c->up;
-    v3 fwd = v3_tangent(p->facing, up);
+    /* the model uses the camera's smoothed basis so both roll together when "up" changes;
+       in flight it points along the view like a ship */
+    v3 up = p->grounded ? c->up : c->view_up;
+    v3 fwd = p->grounded ? v3_tangent(p->facing, up) : c->view;
     fwd = v3_len(fwd) < 1e-3f ? v3_any_perp(up) : v3_norm(fwd);
     v3 right = v3_cross(up, fwd);
     C3D_Mtx base, m, off;

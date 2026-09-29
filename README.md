@@ -144,11 +144,13 @@ Layout: `orbit/source/vec.h`, `world.c`, `player.c`, `camera.c`, `mesh.c` are po
 fragment lighting with the sun as the point light), `hud.c` is the citro2d bottom screen,
 `main.c` the loop.
 
-Controls: circle pad walks on the ground or thrusts sideways in the air (camera relative,
-the player turns to face the direction), B jumps and, held in the air, fires the jetpack
-upward, A thrusts downward, Y is an air brake, L/R orbit the camera, SELECT respawns,
-START quits. "Up" is always away from whichever body pulls hardest, so landing means
-pointing the camera at a planet, pushing forward, and using A/Y to slow down near the ground.
+Controls on the ground: circle pad walks (camera relative, the player turns to face the
+direction), B jumps, L/R orbit the camera. In the air the game switches to flight controls:
+the circle pad looks around (left/right yaws, up/down pitches), B thrusts wherever you are
+looking, X thrusts straight up away from gravity (jetpack lift), A thrusts backward, Y is an
+air brake. SELECT respawns, START quits. To reach another planet: jump, pitch up, hold B to
+leave, then look at the target planet and hold B; near it turn around and hold B, or hold Y,
+to slow down before touching down.
 
 Physics: the player's velocity is stored relative to the dominant body, so standing on a
 moving planet is exact. Switching dominant body converts the velocity so world velocity is
@@ -157,4 +159,4 @@ player in a planet's frame is only the tidal remainder. Touching the sun respawn
 
 Azahar notes: renders at 60 fps. The bottom-screen text shows as boxes in Azahar on this PC
 because the emulator has no dumped system font; on the console the text is the real font.
-Azahar keys: arrows = circle pad, S = B, A = A, X = Y, Q/W = L/R, N = SELECT, M = START.
+Azahar keys: arrows = circle pad, S = B, A = A, Z = X, X = Y, Q/W = L/R, N = SELECT, M = START.

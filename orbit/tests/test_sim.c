@@ -32,7 +32,7 @@ int main(void) {
 
     /* standing still on a moving planet: no drift for ten seconds */
     player p; player_spawn(&p, &w, BODY_START);
-    player_input in; memset(&in, 0, sizeof in); in.cam_forward = v3_(1, 0, 0);
+    player_input in; memset(&in, 0, sizeof in); in.cam_forward = v3_(1, 0, 0); in.view_forward = v3_(1, 0, 0);
     v3 off0 = v3_sub(p.pos, w.b[BODY_START].pos);
     for (int f = 0; f < 600; f++) { world_update(&w, DT); player_update(&p, &w, &in, DT); }
     v3 off1 = v3_sub(p.pos, w.b[BODY_START].pos);
@@ -98,10 +98,27 @@ int main(void) {
     CHECK_NEAR(p.altitude, 0, 1e-3f, "landed at zero altitude");
 
     /* camera stays tangent and outside the planet */
-    camera c; camera_init(&c, &p);
-    for (int f = 0; f < 120; f++) { world_update(&w, DT); player_update(&p, &w, &in, DT); camera_update(&c, &w, &p, 1.0f, DT); }
+    camera c; camera_init(&c, &p); camera_input cin; memset(&cin, 0, sizeof cin); cin.turn = 1.0f;
+    for (int f = 0; f < 120; f++) { world_update(&w, DT); player_update(&p, &w, &in, DT); camera_update(&c, &w, &p, &cin, DT); }
     CHECK(fabsf(v3_dot(c.fwd, c.up)) < 1e-3f, "camera forward is perpendicular to camera up");
     CHECK(v3_len(v3_sub(c.pos, w.b[1].pos)) > w.b[1].radius, "camera is outside the planet");
+    CHECK(fabsf(c.pitch) < 1e-3f, "pitch stays zero on the ground");
+
+    /* flight: pad pitches the view, B thrusts along it */
+    in.jump_pressed = 1;
+    world_update(&w, DT); player_update(&p, &w, &in, DT);
+    in.jump_pressed = 0;
+    cin.turn = 0; cin.look_y = 1.0f;
+    for (int f = 0; f < 30; f++) { world_update(&w, DT); player_update(&p, &w, &in, DT); camera_update(&c, &w, &p, &cin, DT); }
+    CHECK(c.pitch > 0.5f, "holding the pad up pitches the view up in flight");
+    CHECK(fabsf(v3_dot(c.view, c.view_up)) < 1e-3f, "pitched view stays perpendicular to its up");
+    CHECK(v3_dot(c.view, p.up) > 0.4f, "pitched view points partly away from the planet");
+    cin.look_y = 0; in.thrust_fwd = 1; in.view_forward = c.view;
+    v3 before = p.vel;
+    for (int f = 0; f < 30; f++) { world_update(&w, DT); player_update(&p, &w, &in, DT); camera_update(&c, &w, &p, &cin, DT); in.view_forward = c.view; }
+    CHECK(v3_dot(v3_sub(p.vel, before), c.view) > 8.0f, "B thrusts along the view direction");
+    CHECK(p.thrusting, "flame shows while thrusting forward");
+    in.thrust_fwd = 0;
 
     /* meshes: sphere normals are unit and winding faces outward */
     mesh s = mesh_sphere(5, 8, 12, 0xFF0000FF, 0x00FF00FF);
