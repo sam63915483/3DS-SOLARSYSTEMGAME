@@ -23,8 +23,11 @@ static void place(camera *c, const world *w, const player *p, float dt) {
     v3 tp_target = v3_add(p->pos, v3_scale(c->view_up, 1.0f));
     const body *b = &w->b[p->dom];
     v3 d = v3_sub(tp_pos, b->pos);
-    float dist = v3_len(d), min = b->radius + 0.6f;
-    if (dist < min) tp_pos = v3_add(b->pos, v3_scale(d, min / dist));
+    float dist = v3_len(d);
+    if (dist < b->radius + b->amp + 1.0f) {   /* close enough to care: keep it above the terrain */
+        float min = world_surface(w, p->dom, v3_norm(d)) + 0.6f;
+        if (dist < min) tp_pos = v3_add(b->pos, v3_scale(d, min / dist));
+    }
 
     /* first person: at the eyes, looking along the view */
     v3 fp_pos = v3_add(p->pos, v3_scale(c->view_up, EYE_HEIGHT));

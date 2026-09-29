@@ -12,7 +12,7 @@
 
 #define STAR_RADIUS 4000.0f
 
-typedef struct { void *vbo; int count; } gpu_mesh;
+typedef struct { void *vbo; int count; void *ibo; int icount; } gpu_mesh;
 
 static C3D_RenderTarget *top;
 static DVLB_s *dvlb;
@@ -23,7 +23,7 @@ static C3D_LightEnv lightEnv;
 static C3D_Light light;
 static C3D_LightLut lutPhong;
 
-static gpu_mesh bodies[BODY_COUNT], body_box, head_box, visor_box, pack_box, flame_box, stars;
+static gpu_mesh bodies[BODY_COUNT], props[BODY_COUNT], body_box, head_box, visor_box, pack_box, flame_box, stars;
 
 static const C3D_Material mat_lit = {
     { 0.30f, 0.30f, 0.36f },  /* ambient */
@@ -37,12 +37,25 @@ static const C3D_Material mat_glow = {
 };
 
 static gpu_mesh upload(mesh m) {
-    gpu_mesh g;
+    gpu_mesh g = { 0, 0, 0, 0 };
     g.count = m.count;
-    g.vbo = linearAlloc(m.count * sizeof(vertex));
-    memcpy(g.vbo, m.v, m.count * sizeof(vertex));
+    if (m.count) {
+        g.vbo = linearAlloc(m.count * sizeof(vertex));
+        memcpy(g.vbo, m.v, m.count * sizeof(vertex));
+    }
+    if (m.idx) {
+        g.icount = m.idx_count;
+        g.ibo = linearAlloc(m.idx_count * sizeof(uint16_t));
+        memcpy(g.ibo, m.idx, m.idx_count * sizeof(uint16_t));
+    }
     mesh_free(&m);
     return g;
+}
+
+static void gpu_free(gpu_mesh *g) {
+    if (g->vbo) linearFree(g->vbo);
+    if (g->ibo) linearFree(g->ibo);
+    g->vbo = g->ibo = 0; g->count = g->icount = 0;
 }
 
 void render_init(const world *w) {
@@ -63,10 +76,12 @@ void render_init(const world *w) {
     C3D_LightInit(&light, &lightEnv);
     C3D_LightColor(&light, 1.0f, 0.98f, 0.92f);
 
+    /* mesh density scales with size so the hills stay smooth; indexed, so cheap to draw */
+    static const int rings_for[BODY_COUNT] = { 32, 36, 56, 44 };
+    static const int segs_for[BODY_COUNT] = { 48, 54, 84, 66 };
     for (int i = 0; i < BODY_COUNT; i++) {
-        const body *b = &w->b[i];
-        int rings = 32, segs = 48;
-        bodies[i] = upload(mesh_sphere(b->radius, rings, segs, b->color_a, b->color_b));
+        bodies[i] = upload(mesh_planet(w, i, rings_for[i], segs_for[i]));
+        props[i] = upload(mesh_props(w, i));
     }
     /* player: model +z is forward, +y is up, origin at the middle of the 1.8 tall body */
     body_box = upload(mesh_box(0.8f, 1.3f, 0.5f, 0xE8E8F0FF));
@@ -114,7 +129,8 @@ static void draw(const gpu_mesh *g, const C3D_Mtx *model, const C3D_Material *ma
     C3D_BufInfo *buf = C3D_GetBufInfo();
     BufInfo_Init(buf);
     BufInfo_Add(buf, g->vbo, sizeof(vertex), 3, 0x210);
-    C3D_DrawArrays(GPU_TRIANGLES, 0, g->count);
+    if (g->ibo) C3D_DrawElements(GPU_TRIANGLES, g->icount, C3D_UNSIGNED_SHORT, g->ibo);
+    else C3D_DrawArrays(GPU_TRIANGLES, 0, g->count);
 }
 
 static void mtx_translate(C3D_Mtx *m, v3 p) {
@@ -163,6 +179,11 @@ static void draw_player(const player *p, const camera *c, float time) {
     if (p->jet_up)   draw_jet(&base, v3_(0, -0.55f, -0.38f), v3_(0, -1, 0), 0.9f, time, 0);
     if (p->jet_down) draw_jet(&base, v3_(0, 0.25f, -0.38f), v3_(0, 1, 0), 0.7f, time, 1);
     if (p->jet_fwd)  draw_jet(&base, v3_(0, -0.15f, -0.53f), v3_(0, 0, -1), 1.0f, time, 2);
+    if (v3_len(p->brake_dir) > 0.5f) {
+        /* brake: exhaust along the direction of travel, expressed in the model's frame */
+        v3 dm = v3_(v3_dot(p->brake_dir, right), v3_dot(p->brake_dir, up), v3_dot(p->brake_dir, fwd));
+        draw_jet(&base, v3_(0, -0.15f, -0.38f), dm, 0.9f, time, 5);
+    }
     if (p->jet_roll > 0.05f) {   /* roll right: left shoulder fires up-left, right hip fires down-right */
         draw_jet(&base, v3_(-0.42f, 0.25f, -0.38f), v3_(-1, 1, 0), 0.5f, time, 3);
         draw_jet(&base, v3_(0.42f, -0.55f, -0.38f), v3_(1, -1, 0), 0.5f, time, 4);
@@ -198,14 +219,15 @@ void render_scene(const world *w, const player *p, const camera *c, float time) 
     for (int i = 0; i < BODY_COUNT; i++) {
         mtx_translate(&model, w->b[i].pos);
         draw(&bodies[i], &model, w->b[i].emissive ? &mat_glow : &mat_lit);
+        if (props[i].count) draw(&props[i], &model, &mat_lit);
     }
     draw_player(p, c, time);
 }
 
 void render_fini(void) {
-    for (int i = 0; i < BODY_COUNT; i++) linearFree(bodies[i].vbo);
-    linearFree(body_box.vbo); linearFree(head_box.vbo); linearFree(visor_box.vbo);
-    linearFree(pack_box.vbo); linearFree(flame_box.vbo); linearFree(stars.vbo);
+    for (int i = 0; i < BODY_COUNT; i++) { gpu_free(&bodies[i]); gpu_free(&props[i]); }
+    gpu_free(&body_box); gpu_free(&head_box); gpu_free(&visor_box);
+    gpu_free(&pack_box); gpu_free(&flame_box); gpu_free(&stars);
     shaderProgramFree(&program);
     DVLB_Free(dvlb);
 }

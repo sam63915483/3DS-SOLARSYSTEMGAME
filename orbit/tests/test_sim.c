@@ -3,6 +3,7 @@
 #include "player.h"
 #include "camera.h"
 #include "mesh.h"
+#include "noise.h"
 #include <string.h>
 
 #define DT (1.0f / 60.0f)
@@ -46,7 +47,7 @@ int main(void) {
     v3 off2 = v3_sub(p.pos, w.b[BODY_START].pos);
     float moved = v3_len(v3_sub(off2, off1));
     CHECK(moved > 14.0f && moved < 18.0f, "walked about 16 units in two seconds");
-    CHECK_NEAR(v3_len(off2), w.b[BODY_START].radius + PLAYER_HALF_HEIGHT, 1e-2f, "walking stays on the surface");
+    CHECK_NEAR(v3_len(off2), world_surface(&w, BODY_START, p.up) + PLAYER_HALF_HEIGHT, 1e-2f, "walking stays on the terrain surface");
     CHECK(v3_dot(p.facing, p.up) < 1e-3f, "facing is tangent to the surface");
     in.my = 0;
 
@@ -170,19 +171,48 @@ int main(void) {
     CHECK(fabsf(v3_dot(v3_norm(dv), p.up)) < 0.5f, "that thrust is mostly sideways to gravity, not away from the planet");
     in.thrust_up = 0;
 
-    /* meshes: sphere normals are unit and winding faces outward */
-    mesh s = mesh_sphere(5, 8, 12, 0xFF0000FF, 0x00FF00FF);
-    int bad = 0;
-    for (int i = 0; i < s.count; i += 3) {
-        v3 a = v3_(s.v[i].pos[0], s.v[i].pos[1], s.v[i].pos[2]);
-        v3 b = v3_(s.v[i+1].pos[0], s.v[i+1].pos[1], s.v[i+1].pos[2]);
-        v3 cc = v3_(s.v[i+2].pos[0], s.v[i+2].pos[1], s.v[i+2].pos[2]);
-        v3 n = v3_cross(v3_sub(b, a), v3_sub(cc, a));
-        if (v3_len(n) > 1e-6f && v3_dot(n, a) < 0) bad++;
+    /* terrain: deterministic, sea is flat, land rises above the radius */
+    {
+        v3 d0 = v3_norm(v3_(0.3f, 0.8f, -0.5f));
+        CHECK_NEAR(world_height(&w, BODY_START, d0), world_height(&w, BODY_START, d0), 0, "terrain height is deterministic");
+        int sea = 0, land = 0, below = 0;
+        for (int k = 0; k < 400; k++) {
+            v3 d = v3_norm(v3_(noise_hashf(k, 0, 0, 5u) * 2 - 1, noise_hashf(k, 1, 0, 5u) * 2 - 1, noise_hashf(k, 2, 0, 5u) * 2 - 1));
+            float h = world_height(&w, BODY_START, d);
+            if (h == 0) sea++; else if (h > 0) land++; else below++;
+        }
+        CHECK(sea > 50 && land > 50, "Verdant has both sea and land");
+        CHECK(below == 0, "nothing on a sea planet is below sea level");
+        CHECK(world_height(&w, BODY_SUN, d0) == 0, "the sun is a perfect sphere");
     }
-    CHECK(bad == 0, "sphere triangles wind counter-clockwise from outside");
-    CHECK(s.v[0].col[0] == 0 && s.v[0].col[1] == 0xFF, "vertex colour bytes are r g b a");
+
+    /* planet mesh: indexed, winding faces outward, normals unit */
+    mesh s = mesh_planet(&w, BODY_START, 16, 24);
+    int bad = 0, badn = 0;
+    for (int i = 0; i < s.idx_count; i += 3) {
+        v3 a = v3_(s.v[s.idx[i]].pos[0], s.v[s.idx[i]].pos[1], s.v[s.idx[i]].pos[2]);
+        v3 b = v3_(s.v[s.idx[i+1]].pos[0], s.v[s.idx[i+1]].pos[1], s.v[s.idx[i+1]].pos[2]);
+        v3 cc = v3_(s.v[s.idx[i+2]].pos[0], s.v[s.idx[i+2]].pos[1], s.v[s.idx[i+2]].pos[2]);
+        v3 n = v3_cross(v3_sub(b, a), v3_sub(cc, a));
+        if (v3_len(n) > 1e-2f && v3_dot(n, a) < 0) bad++;
+    }
+    for (int k = 0; k < s.count; k++) {
+        float l = sqrtf(s.v[k].nrm[0]*s.v[k].nrm[0] + s.v[k].nrm[1]*s.v[k].nrm[1] + s.v[k].nrm[2]*s.v[k].nrm[2]);
+        if (fabsf(l - 1) > 1e-3f) badn++;
+    }
+    CHECK(bad == 0, "planet triangles wind counter-clockwise from outside");
+    CHECK(badn == 0, "planet normals are unit length");
+    CHECK(s.count <= 65535, "planet vertex count fits 16-bit indices");
     mesh_free(&s);
+    mesh pr = mesh_props(&w, BODY_START);
+    CHECK(pr.count > 1000 && pr.count % 3 == 0, "Verdant has a batch of props");
+    int wet = 0;
+    for (int k = 0; k < pr.count; k += 3) {
+        v3 a = v3_(pr.v[k].pos[0], pr.v[k].pos[1], pr.v[k].pos[2]);
+        if (v3_len(a) < w.b[BODY_START].radius - 1.0f) wet++;   /* sunk below sea level */
+    }
+    CHECK(wet == 0, "no props sit below sea level");
+    mesh_free(&pr);
     mesh bx = mesh_box(1, 2, 3, 0xFFFFFFFF);
     bad = 0;
     for (int i = 0; i < bx.count; i += 3) {

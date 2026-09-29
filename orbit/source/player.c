@@ -8,16 +8,27 @@
 #define GROUND_SNAP  0.5f
 
 void player_spawn(player *p, const world *w, int body) {
-    /* stand where the sun is about 45 degrees above the horizon */
+    /* stand where the sun is about 45 degrees above the horizon, on land */
     v3 up = v3_norm(v3_add(v3_norm(v3_scale(w->b[body].pos, -1.0f)), v3_(0, 1, 0)));
+    {
+        v3 axis = v3_any_perp(up), best = up;
+        float best_h = world_height_raw(w, body, up), want = 0.15f * w->b[body].amp;
+        for (int k = 1; k < 64 && best_h < want; k++) {
+            v3 c = v3_rotate(up, axis, 0.08f * k);
+            float h = world_height_raw(w, body, c);
+            if (h > best_h) { best_h = h; best = c; }
+        }
+        up = best;
+    }
     p->dom = body;
     p->up = up;
-    p->pos = v3_add(w->b[body].pos, v3_scale(up, w->b[body].radius + PLAYER_HALF_HEIGHT));
+    p->pos = v3_add(w->b[body].pos, v3_scale(up, world_surface(w, body, up) + PLAYER_HALF_HEIGHT));
     p->vel = v3_(0, 0, 0);
     p->grounded = 1;
     p->thrusting = 0;
     p->jet_up = p->jet_down = p->jet_fwd = 0;
     p->jet_roll = 0;
+    p->brake_dir = v3_(0, 0, 0);
     p->facing = v3_(1, 0, 0);
     p->move_dir = v3_(0, 0, 0);
     p->speed = 0;
@@ -52,6 +63,7 @@ void player_update(player *p, const world *w, const player_input *in, float dt) 
     p->thrusting = 0;
     p->jet_up = p->jet_down = p->jet_fwd = 0;
     p->jet_roll = 0;
+    p->brake_dir = v3_(0, 0, 0);
     if (p->grounded) {
         v3 vt = v3_tangent(p->vel, p->up);
         vt = v3_lerp(vt, v3_scale(move, WALK_SPEED), ease(12.0f, dt));
@@ -74,7 +86,11 @@ void player_update(player *p, const world *w, const player_input *in, float dt) 
         if (in->thrust_down) { p->vel = v3_sub(p->vel, v3_scale(vup, THRUST * dt)); p->jet_down = 1; }
         p->jet_roll = in->roll;
         p->thrusting = p->jet_fwd || p->jet_up || p->jet_down || in->roll != 0;
-        if (in->brake) p->vel = v3_scale(p->vel, 1.0f - ease(BRAKE_RATE, dt));
+        if (in->brake && v3_len(p->vel) > 0.5f) {
+            p->vel = v3_scale(p->vel, 1.0f - ease(BRAKE_RATE, dt));
+            p->brake_dir = v3_norm(p->vel);   /* exhaust goes the way we travel */
+            p->thrusting = 1;
+        }
         /* in the air the model follows the camera heading */
         move = v3_(0, 0, 0); mlen = 0;
         p->move_dir = move;
@@ -91,11 +107,12 @@ void player_update(player *p, const world *w, const player_input *in, float dt) 
         const body *b = &w->b[i];
         v3 d = v3_sub(p->pos, b->pos);
         float dist = v3_len(d);
-        float floor = b->radius + PLAYER_HALF_HEIGHT;
+        if (dist > b->radius + b->amp + PLAYER_HALF_HEIGHT + GROUND_SNAP) continue;   /* nowhere near */
+        v3 n = v3_norm(d);
+        float floor = world_surface(w, i, n) + PLAYER_HALF_HEIGHT;   /* terrain under our feet */
         int snap = (p->grounded && !jumped && i == p->dom && dist < floor + GROUND_SNAP);
         if (dist >= floor && !snap) continue;
         if (i == BODY_SUN) { player_spawn(p, w, BODY_START); return; }
-        v3 n = v3_norm(d);
         p->pos = v3_add(b->pos, v3_scale(n, floor));
         switch_frame(p, w, i);
         dom = &w->b[p->dom];
@@ -112,6 +129,6 @@ void player_update(player *p, const world *w, const player_input *in, float dt) 
     p->facing = v3_len(p->facing) < 1e-3f ? fwd : v3_norm(p->facing);
 
     p->speed = v3_len(p->vel);
-    p->altitude = v3_len(v3_sub(p->pos, dom->pos)) - dom->radius - PLAYER_HALF_HEIGHT;
+    p->altitude = v3_len(v3_sub(p->pos, dom->pos)) - world_surface(w, p->dom, p->up) - PLAYER_HALF_HEIGHT;
     if (p->grounded || fabsf(p->altitude) < 0.01f) p->altitude = 0;   /* no -0.0 flicker on the HUD */
 }
