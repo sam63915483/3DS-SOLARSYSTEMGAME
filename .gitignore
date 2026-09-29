@@ -5,3 +5,10 @@ app/*.elf
 app/*.map
 scratch-mic/
 node_modules/
+app/*.cia
+app/cia/*.bnr
+app/cia/*.icn
+app/cia/romfs/
+tools/*.zip
+tools/bannertool/
+tools/makerom/
