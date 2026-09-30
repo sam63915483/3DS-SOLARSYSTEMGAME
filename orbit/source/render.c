@@ -310,12 +310,14 @@ static float sky_color(const world *w, const player *p, const camera *c, u32 *ou
         v3 rel = v3_sub(c->pos, b->pos);
         v3 up = v3_norm(rel), sun = v3_norm(v3_sub(w->b[BODY_SUN].pos, c->pos));
         float e = v3_dot(up, sun);
-        float day = clamp01((e + 0.12f) / 0.40f);
+        /* full blue until the sun is about 5 degrees up, dark about 6 degrees after it sets */
+        float day = clamp01((e + 0.10f) / 0.18f);
+        day = day * day * (3.0f - 2.0f * day);
         float strength = (b->atmo & 0xFF) / 255.0f;
         k = dens * day * strength;
         float ar = (b->atmo >> 24) & 0xFF, ag = (b->atmo >> 16) & 0xFF, ab = (b->atmo >> 8) & 0xFF;
         /* warm tint when the sun is near the horizon */
-        float warm = clamp01(1.0f - fabsf(e) / 0.25f) * dens * 0.7f;
+        float warm = clamp01(1.0f - fabsf(e) / 0.16f) * dens * 0.75f;
         ar = ar + (235 - ar) * warm; ag = ag + (130 - ag) * warm; ab = ab + (60 - ab) * warm;
         r = 2 + (ar - 2) * k; g = 2 + (ag - 2) * k; bl = 10 + (ab - 10) * k;
     }
