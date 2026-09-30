@@ -403,7 +403,7 @@ v3 mesh_grass_cell_dir(int cell) {
 mesh mesh_grass(const world *w, int bi, int cell) {
     const body *b = &w->b[bi];
     mesh m = { 0, 0, 0, 0 };
-    int total = b->terrain == TERRAIN_VERDANT ? 6000 : 0;
+    int total = b->terrain == TERRAIN_VERDANT ? 10000 : 0;   /* the planet has 4x the area; grass is drawn near the camera only */
     if (!total) return m;
     /* a cell holds at most a third of the tufts (the equator cells are the largest) */
     m.v = calloc(total / 3 * 15 + 15, sizeof(vertex));

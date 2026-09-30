@@ -545,7 +545,7 @@ void render_scene(const world *w, const player *p, const camera *c, const fishin
         mtx_translate(&model, b->pos);
         v3 to_cam = v3_sub(c->pos, b->pos);
         float gap = v3_len(to_cam) - b->radius;
-        if (gap > 250.0f) {
+        if (gap > fmaxf(250.0f, 1.5f * b->radius)) {   /* far enough that the coarse copy looks the same */
             /* far away: the coarse copy (a carved moon's caves are not visible from out here) */
             draw_ex(&bodies_far[i], &model, b->emissive ? &mat_glow : &mat_lit, has_detail[i] ? &detail[i] : NULL, uMV);
         } else if (b->caves.enabled) {

@@ -4,7 +4,7 @@
 #include "noise.h"
 #include <stdlib.h>
 
-#define MU_SUN 200000.0f
+#define MU_SUN 800000.0f   /* 4x with the planets, so every mass ratio (and so every sphere of influence) keeps its shape */
 
 static void body_place(world *w, int i, float t) {
     body *b = &w->b[i];
@@ -29,27 +29,29 @@ v3 world_grid_dir(const world *w, int i, int ring, int seg) {
 }
 
 void world_init(world *w) {
-    /* moons are half their planet's radius with surface gravity about 9 (planets are 13-15), on
+    /* planets are twice their original size with 4x the mass, so surface gravity (13-15) is
+       unchanged; their terrain grids are 1.5x finer and their noise twice as dense so hills keep
+       their size. Moons are a quarter of their planet's radius with surface gravity about 9, on
        orbits wide enough that the planet's tidal pull leaves most of that gravity intact near the
        surface; planets are packed as tightly as possible while no moon's path can reach the sun
        or a neighbour's moon path (20 units apart when the planets line up) */
     static const body defs[BODY_COUNT] = {
         { .name = "Sun",     .radius = 100.0f, .mu = MU_SUN,    .parent = -1,           .emissive = 1, .terrain = TERRAIN_SUN,
           .rings = 32, .segs = 48, .seed = 11u },
-        { .name = "Ember",   .radius = 80.0f,  .mu = 96000.0f,  .parent = BODY_SUN,     .orbit_r = 490.0f,  .orbit_phase = 0.6f,
-          .terrain = TERRAIN_EMBER,   .amp = 6.0f,  .freq = 2.4f, .sea_level = -9.0f, .liquid = 0, .rings = 40, .segs = 60, .seed = 23u,
-          .atmo = 0xE09058FFu, .atmo_h = 24.0f },
-        { .name = "Verdant", .radius = 128.0f, .mu = 212992.0f, .parent = BODY_SUN,     .orbit_r = 1330.0f, .orbit_phase = 2.4f,
-          .terrain = TERRAIN_VERDANT, .amp = 10.0f, .freq = 2.2f, .sea_level = -1.0f, .liquid = 1, .rings = 64, .segs = 96, .seed = 37u,
-          .atmo = 0x6AA0F0FFu, .atmo_h = 45.0f },
-        { .name = "Frost",   .radius = 96.0f,  .mu = 129024.0f, .parent = BODY_SUN,     .orbit_r = 2220.0f, .orbit_phase = 4.4f,
-          .terrain = TERRAIN_FROST,   .amp = 5.0f,  .freq = 2.4f, .sea_level = -1.0f, .liquid = 0, .rings = 48, .segs = 72, .seed = 51u,
-          .atmo = 0xB8D0F0FFu, .atmo_h = 30.0f },
-        { .name = "Cinder",  .radius = 40.0f,  .mu = 14400.0f,  .parent = BODY_EMBER,   .orbit_r = 285.0f,  .orbit_phase = 1.1f, .tilt = 0.35f,
+        { .name = "Ember",   .radius = 160.0f, .mu = 384000.0f, .parent = BODY_SUN,     .orbit_r = 760.0f,  .orbit_phase = 0.6f,
+          .terrain = TERRAIN_EMBER,   .amp = 6.0f,  .freq = 4.8f, .sea_level = -9.0f, .liquid = 0, .rings = 60, .segs = 90, .seed = 23u,
+          .atmo = 0xE09058FFu, .atmo_h = 48.0f },
+        { .name = "Verdant", .radius = 256.0f, .mu = 851968.0f, .parent = BODY_SUN,     .orbit_r = 1900.0f, .orbit_phase = 2.4f,
+          .terrain = TERRAIN_VERDANT, .amp = 10.0f, .freq = 4.4f, .sea_level = -1.0f, .liquid = 1, .rings = 96, .segs = 144, .seed = 37u,
+          .atmo = 0x6AA0F0FFu, .atmo_h = 90.0f },
+        { .name = "Frost",   .radius = 192.0f, .mu = 516096.0f, .parent = BODY_SUN,     .orbit_r = 3080.0f, .orbit_phase = 4.4f,
+          .terrain = TERRAIN_FROST,   .amp = 5.0f,  .freq = 4.8f, .sea_level = -1.0f, .liquid = 0, .rings = 72, .segs = 108, .seed = 51u,
+          .atmo = 0xB8D0F0FFu, .atmo_h = 60.0f },
+        { .name = "Cinder",  .radius = 40.0f,  .mu = 14400.0f,  .parent = BODY_EMBER,   .orbit_r = 400.0f,  .orbit_phase = 1.1f, .tilt = 0.35f,
           .terrain = TERRAIN_MOON,    .amp = 3.2f,  .freq = 3.0f, .sea_level = -100.0f, .liquid = 0, .rings = 40, .segs = 60, .seed = 61u },
-        { .name = "Fern",    .radius = 64.0f,  .mu = 36864.0f,  .parent = BODY_VERDANT, .orbit_r = 420.0f,  .orbit_phase = 3.9f, .tilt = 0.5f,
+        { .name = "Fern",    .radius = 64.0f,  .mu = 36864.0f,  .parent = BODY_VERDANT, .orbit_r = 600.0f,  .orbit_phase = 3.9f, .tilt = 0.5f,
           .terrain = TERRAIN_MOON,    .amp = 5.0f,  .freq = 3.0f, .sea_level = -100.0f, .liquid = 0, .rings = 48, .segs = 72, .seed = 67u },
-        { .name = "Sleet",   .radius = 48.0f,  .mu = 20736.0f,  .parent = BODY_FROST,   .orbit_r = 330.0f,  .orbit_phase = 5.3f, .tilt = 0.25f,
+        { .name = "Sleet",   .radius = 48.0f,  .mu = 20736.0f,  .parent = BODY_FROST,   .orbit_r = 440.0f,  .orbit_phase = 5.3f, .tilt = 0.25f,
           .terrain = TERRAIN_MOON,    .amp = 4.0f,  .freq = 3.0f, .sea_level = -100.0f, .liquid = 0, .rings = 44, .segs = 66, .seed = 71u },
     };
     w->t = 0;
@@ -86,9 +88,9 @@ void world_init(world *w) {
 prop_plan world_prop_plan(terrain_kind t) {
     prop_plan p = { 0, 0, 0, 0x787068FF, 0x625A50FF, 1.0f };
     switch (t) {
-    case TERRAIN_VERDANT: p.trees = 400; p.rocks = 110; p.rock_a = 0x8A8278FF; p.rock_b = 0x6E665CFF; break;
-    case TERRAIN_EMBER:   p.trees = 150; p.rocks = 170; p.rock_a = 0x6E3524FF; p.rock_b = 0x4E2418FF; p.rock_scale = 1.6f; break;
-    case TERRAIN_FROST:   p.trees = 200; p.rocks = 60; p.shards = 90; p.rock_a = 0xB4C2D2FF; p.rock_b = 0x94A6BAFF; break;
+    case TERRAIN_VERDANT: p.trees = 800; p.rocks = 220; p.rock_a = 0x8A8278FF; p.rock_b = 0x6E665CFF; break;
+    case TERRAIN_EMBER:   p.trees = 300; p.rocks = 340; p.rock_a = 0x6E3524FF; p.rock_b = 0x4E2418FF; p.rock_scale = 1.6f; break;
+    case TERRAIN_FROST:   p.trees = 400; p.rocks = 120; p.shards = 180; p.rock_a = 0xB4C2D2FF; p.rock_b = 0x94A6BAFF; break;
     case TERRAIN_MOON:    p.rocks = 70; p.rock_a = 0x9A9AA0FF; p.rock_b = 0x6C6C74FF; p.rock_scale = 0.9f; break;
     default: break;
     }

@@ -12,9 +12,9 @@ void village_setup(world *w, int bi) {
     v3 axis = v3_any_perp(spawn), axis2 = v3_cross(spawn, axis);
     /* two spots a short walk from the spawn, on land; pads are off while we look (n is 0) */
     float want = b->sea_level + 0.15f * b->amp;
-    const float offs[HOUSE_N][2] = { { 0.19f, 0.05f }, { -0.06f, 0.20f } };   /* radians about the two axes */
+    const float offs[HOUSE_N][2] = { { 24.0f, 6.5f }, { -7.5f, 25.5f } };   /* units along the ground about the two axes */
     for (int k = 0; k < HOUSE_N; k++) {
-        v3 dir = v3_norm(v3_rotate(v3_rotate(spawn, axis, offs[k][0]), axis2, offs[k][1]));
+        v3 dir = v3_norm(v3_rotate(v3_rotate(spawn, axis, offs[k][0] / b->radius), axis2, offs[k][1] / b->radius));
         for (int tries = 0; tries < 40 && world_height_raw(w, bi, dir) < want; tries++)
             dir = v3_norm(v3_rotate(dir, axis2, 0.04f));
         house *h = &v->h[k];

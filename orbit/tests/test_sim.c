@@ -30,7 +30,7 @@ int main(void) {
         for (int m = 0; m < 3; m++) {
             const body *b = &w.b[moons[m]], *par = &w.b[b->parent];
             CHECK(b->parent >= BODY_EMBER && b->parent <= BODY_FROST, "moon orbits a planet");
-            CHECK_NEAR(b->radius / par->radius, 0.5f, 1e-3f, "moon is half its planet's radius");
+            CHECK_NEAR(b->radius / par->radius, 0.25f, 1e-3f, "moon is a quarter of its planet's radius");
             CHECK(b->atmo == 0, "moon has no atmosphere");
             CHECK(b->orbit_r - b->radius - b->amp > par->radius + par->atmo_h + 30.0f, "moon's inner edge clears the planet's atmosphere by 30+ units");
             CHECK(b->orbit_r < par->radius * 3.6f, "moon orbits fairly close to its planet");
