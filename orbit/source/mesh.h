@@ -65,6 +65,13 @@ void mesh_tri(mesh *m, v3 a, v3 b, v3 c, v3 inside, uint32_t col);
 void mesh_tri_n(mesh *m, v3 a, v3 na, v3 b, v3 nb, v3 c, v3 nc, uint32_t ca, uint32_t cb, uint32_t cc);
 /* Octahedron with radii along a basis, appended. */
 void mesh_octa(mesh *m, v3 c, v3 r, v3 u, v3 f, float rx, float ry, float rz, uint32_t col);
+/* Houses and their aliens, in the house's local frame (x right, y up, z forward, origin at the
+   pad). style 0: the clay dome hut and the tall three-eyed VESK; 1: the teal lodge and the
+   round one-eyed MOMO. The glow mesh holds the parts drawn emissive (windows, eyes). */
+mesh mesh_house(int style);
+mesh mesh_house_glow(int style);
+mesh mesh_alien(int style);
+mesh mesh_alien_glow(int style);
 /* n small triangles scattered on a sphere of the given radius. */
 mesh mesh_stars(int n, float radius, float size, uint32_t seed);
 void mesh_free(mesh *m);

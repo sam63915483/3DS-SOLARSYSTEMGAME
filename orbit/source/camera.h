@@ -12,6 +12,7 @@ typedef struct {
     float level_t;      /* seconds left of easing the view back to level after takeoff */
     int first_person;   /* requested view */
     float fp;           /* 0 = third person, 1 = inside the head, eased between */
+    float inside;       /* how first-person the view is right now (fp, or pushed in by a wall) */
     float cam_back;     /* fraction of the third-person distance the caves allow, smoothed */
     float shake, shake_t;   /* 0..1 kick from a hard landing, decays; and its clock */
     int gyro;           /* first-person gyro look (Majora's Mask style); only while first_person */

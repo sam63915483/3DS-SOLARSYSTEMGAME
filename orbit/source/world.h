@@ -76,8 +76,21 @@ typedef struct {
     v3 pos, prev, vel;   /* world position now, last frame, and velocity */
 } body;
 
+/* A house on Verdant with an alien at home in it. Local frame: x right, y up, z forward
+   (the door faces +z). The terrain is flattened to pad_h around it. */
+#define HOUSE_N 2
+typedef struct {
+    v3 dir, fwd;          /* unit: from the body's centre; the way the door faces (tangent) */
+    float pad_h;          /* terrain height the pad is flattened to */
+    int style;            /* 0 dome hut (VESK), 1 lodge (MOMO) */
+    v3 npc_local;         /* where the alien stands, local */
+    v3 npc_fwd;           /* the way the alien faces now, world (smoothed) */
+} house;
+typedef struct { house h[HOUSE_N]; int n; int body; } village;
+
 typedef struct {
     body b[BODY_COUNT];
+    village village;
     float t;
 } world;
 
@@ -109,5 +122,9 @@ uint32_t world_color(const world *w, int i, v3 dir, float raw_h);
 prop_plan world_prop_plan(terrain_kind t);
 /* World position of a prop's base (a little below the surface so it never floats). */
 v3 world_prop_base(const world *w, int i, const prop *q);
+/* Where the player first stands on body i: land with the sun about 45 degrees up. */
+v3 world_spawn_dir(const world *w, int i);
+/* True when dir on body i is within `units` of a house (no props or grass there). */
+int world_near_house(const world *w, int i, v3 dir, float units);
 
 #endif

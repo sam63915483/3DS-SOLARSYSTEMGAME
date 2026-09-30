@@ -1,5 +1,6 @@
 #include "hud.h"
 #include "font.h"
+#include "village.h"
 #include <stdio.h>
 
 #define BTN_X 236
@@ -93,6 +94,12 @@ void hud_draw(C3D_RenderTarget *bottom, const world *w, const player *p, const c
         font_draw("PAD  LOOK       L/R ROLL", 8, 166, 1.5f, dim);
         font_draw("X  UP     B  DOWN", 8, 180, 1.5f, dim);
         font_draw("A  BOOST  Y  BRAKE", 8, 194, 1.5f, dim);
+    }
+    /* an alien within earshot speaks over the controls */
+    const char *say = village_talk(w, p);
+    if (say) {
+        C2D_DrawRectSolid(0, 163, 0, 320, 50, C2D_Color32(0x20, 0x24, 0x34, 0xFF));
+        font_draw(say, 8, 172, 1.5f, accent);
     }
     font_draw("SELECT RESPAWN   START QUIT", 8, 216, 1.5f, dim);
 }

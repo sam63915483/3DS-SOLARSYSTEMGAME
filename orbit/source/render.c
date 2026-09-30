@@ -4,6 +4,7 @@
 #include "render.h"
 #include "mesh.h"
 #include "moon.h"
+#include "village.h"
 #include "texture.h"
 #include "vshader_shbin.h"
 #include "atmosphere_shbin.h"
@@ -35,6 +36,7 @@ static vertex *dust_vbo;
 static gpu_mesh astro_body, astro_arm, astro_leg, flame_outer, flame_inner, stars;
 static gpu_mesh rod_seg, bobber_top, bobber_bot, fish_mesh, gem;
 static gpu_mesh moon_oct[BODY_COUNT][8], moon_gems[BODY_COUNT];   /* carved moons, in octants */
+static gpu_mesh house_mesh[HOUSE_N], house_glow[HOUSE_N], alien_mesh[HOUSE_N], alien_glow[HOUSE_N];
 #define LINE_SEGS 12
 #define LINE_VERTS (LINE_SEGS * 6)
 #define SPLASH_VERTS (8 * 6)
@@ -148,6 +150,10 @@ void render_init(const world *w) {
     bobber_bot = upload(mesh_sphere(0.11f, 6, 8, 0xF0F0F0FF));
     fish_mesh = upload(mesh_fish());
     gem = upload(mesh_gem(1.0f, 0xD0FF70FF));   /* unit, scaled per firefly */
+    for (int k = 0; k < HOUSE_N; k++) {
+        house_mesh[k] = upload(mesh_house(k)); house_glow[k] = upload(mesh_house_glow(k));
+        alien_mesh[k] = upload(mesh_alien(k)); alien_glow[k] = upload(mesh_alien_glow(k));
+    }
     for (int i = 0; i < BODY_COUNT; i++) {
         gpu_mesh none = { 0, 0, 0, 0 };
         moon_gems[i] = none;
@@ -277,7 +283,7 @@ static void draw_limb(const gpu_mesh *g, const C3D_Mtx *base, v3 pivot, float sw
 }
 
 static void draw_player(const player *p, const camera *c, const fishing *f, float time) {
-    if (c->fp > 0.6f) return;   /* first person: no model in the way */
+    if (c->inside > 0.6f) return;   /* first person, or the camera squeezed into the helmet: no model in the way */
 
     /* the model uses the player's smoothed body basis: upright on the ground, easing onto the
        view like a ship in flight, so takeoff and landing never snap it */
@@ -518,15 +524,18 @@ void render_scene(const world *w, const player *p, const camera *c, const fishin
         mat_stars.emission[0] = mat_stars.emission[1] = mat_stars.emission[2] = star_k > 1 ? 1 : star_k;
         mtx_translate(&model, c->pos);
         C3D_CullFace(GPU_CULL_NONE);
-        /* the nebula first: its wisps (texture alpha times the band mask in the vertex alpha)
-           add faint colour to the black; then the stars, additive, so a dimmed star can only
-           brighten the sky behind it, never show as a dark speck */
-        if (has_nebula_tex) {
-            C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE, GPU_SRC_ALPHA, GPU_ONE);
-            draw_ex(&nebula, &model, &mat_stars, &nebula_tex, uMV);
-        }
+        /* the stars, additive, so a dimmed star can only brighten the sky behind it, never show
+           as a dark speck; then the nebula over them without writing depth (it sits just inside
+           the star sphere and would otherwise hide them): its wisps are the texture alpha times
+           the band mask in the vertex alpha */
         C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ONE, GPU_ONE, GPU_ONE);
         draw(&stars, &model, &mat_stars);
+        if (has_nebula_tex) {
+            C3D_DepthTest(true, GPU_GREATER, GPU_WRITE_COLOR);
+            C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE, GPU_SRC_ALPHA, GPU_ONE);
+            draw_ex(&nebula, &model, &mat_stars, &nebula_tex, uMV);
+            C3D_DepthTest(true, GPU_GREATER, GPU_WRITE_ALL);
+        }
         C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
         C3D_CullFace(GPU_CULL_BACK_CCW);
     }
@@ -583,6 +592,30 @@ void render_scene(const world *w, const player *p, const camera *c, const fishin
         }
     }
     draw_player(p, c, f, time);
+    /* the village: houses on their pads, each alien bobbing gently and facing its visitor */
+    if (w->village.n) {
+        const body *vb = &w->b[w->village.body];
+        if (v3_len(v3_sub(c->pos, vb->pos)) - vb->radius < 250.0f) {
+            C3D_CullFace(GPU_CULL_NONE);   /* walls are single quads seen from both sides */
+            for (int k = 0; k < w->village.n; k++) {
+                const house *h = &w->village.h[k];
+                v3 origin, right, up, fwd;
+                village_frame(w, k, &origin, &right, &up, &fwd);
+                C3D_Mtx m;
+                mtx_basis(&m, right, up, fwd, origin);
+                draw(&house_mesh[k], &m, &mat_lit);
+                draw(&house_glow[k], &m, &mat_glow);
+                v3 npc = v3_add(v3_add(v3_add(origin, v3_scale(right, h->npc_local.x)), v3_scale(up, h->npc_local.y)), v3_scale(fwd, h->npc_local.z));
+                npc = v3_add(npc, v3_scale(up, 0.05f * sinf(time * 2.0f + k)));
+                v3 nf = v3_norm(v3_tangent(h->npc_fwd, up));
+                nf = v3_rotate(nf, up, 0.08f * sinf(time * 1.3f + k * 2));
+                mtx_basis(&m, v3_cross(up, nf), up, nf, npc);
+                draw(&alien_mesh[k], &m, &mat_lit);
+                draw(&alien_glow[k], &m, &mat_glow);
+            }
+            C3D_CullFace(GPU_CULL_BACK_CCW);
+        }
+    }
     draw_fishing_solid(f);
     draw_school(s, w);
 
@@ -691,6 +724,7 @@ void render_fini(void) {
     gpu_free(&astro_body); gpu_free(&astro_arm); gpu_free(&astro_leg);
     gpu_free(&flame_outer); gpu_free(&flame_inner); gpu_free(&stars);
     gpu_free(&rod_seg); gpu_free(&bobber_top); gpu_free(&bobber_bot); gpu_free(&fish_mesh); gpu_free(&gem);
+    for (int k = 0; k < HOUSE_N; k++) { gpu_free(&house_mesh[k]); gpu_free(&house_glow[k]); gpu_free(&alien_mesh[k]); gpu_free(&alien_glow[k]); }
     for (int i = 0; i < BODY_COUNT; i++) { gpu_free(&moon_gems[i]); for (int o = 0; o < 8; o++) gpu_free(&moon_oct[i][o]); }
     linearFree(line_vbo); linearFree(splash_vbo);
     shaderProgramFree(&program);

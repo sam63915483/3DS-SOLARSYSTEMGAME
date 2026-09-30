@@ -62,6 +62,14 @@ static void place(camera *c, const world *w, const player *p, float dt) {
     if (c->fp < goal) { c->fp += step; if (c->fp > goal) c->fp = goal; }
     if (c->fp > goal) { c->fp -= step; if (c->fp < goal) c->fp = goal; }
     float s = c->fp * c->fp * (3.0f - 2.0f * c->fp);   /* smoothstep */
+    /* squeezed against a wall in third person, the camera slides into the helmet and the view
+       becomes first person (model hidden) instead of a black screen inside the head */
+    float closeness = 1.0f - (v3_len(v3_sub(tp_pos, p->pos)) - 1.0f) / 1.8f;
+    if (closeness < 0) closeness = 0;
+    if (closeness > 1) closeness = 1;
+    closeness = closeness * closeness * (3.0f - 2.0f * closeness);
+    if (closeness > s) s = closeness;
+    c->inside = s;
     c->pos = v3_lerp(tp_pos, fp_pos, s);
     c->target = v3_lerp(tp_target, fp_target, s);
     /* a landing jolt: a quick decaying wobble of the eye */
@@ -99,6 +107,7 @@ void camera_init(camera *c, const player *p) {
     c->ground_pitch = 0;
     c->first_person = 0;
     c->fp = 0;
+    c->inside = 0;
     c->cam_back = 1;
     c->shake = c->shake_t = 0;
     c->gyro = 0;

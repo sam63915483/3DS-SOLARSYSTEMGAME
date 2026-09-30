@@ -1,5 +1,6 @@
 #include "world.h"
 #include "moon.h"
+#include "village.h"
 #include "noise.h"
 #include <stdlib.h>
 
@@ -60,7 +61,7 @@ void world_init(world *w) {
         b->omega = b->orbit_r > 0 && b->parent >= 0 ? sqrtf(mu_par / (b->orbit_r * b->orbit_r * b->orbit_r)) : 0;
         body_place(w, i, 0);
         b->prev = b->pos;
-
+        if (i == BODY_START) village_setup(w, i);   /* before the bake: the house pads are terrain */
         /* bake the height grid: the mesh and the collision both read it */
         b->grid = malloc(sizeof(float) * (b->rings + 1) * b->segs);
         for (int r = 0; r <= b->rings; r++) {
@@ -156,8 +157,9 @@ static void place_props(world *w, int bi) {
                 if (gap < (q.crown + o->crown) * 0.8f) crowded = 1;
             }
             if (crowded) continue;
-            /* on a moon, nothing stands over a cave mouth */
+            /* on a moon, nothing stands over a cave mouth; on Verdant, nothing crowds the houses */
             if (b->caves.enabled && moon_field(w, bi, v3_scale(dir, world_surface(w, bi, dir) - 0.5f)) < 0) continue;
+            if (world_near_house(w, bi, dir, 17.0f)) continue;
             b->props[b->nprops++] = q;
             placed++;
         }
@@ -261,7 +263,43 @@ float world_height_raw(const world *w, int i, v3 dir) {
         float d = h - b->sea_level;
         h = d > -6.0f ? b->sea_level + 4.0f * d + 0.25f * d * d : b->sea_level + 2.5f * d;
     }
+    /* the houses stand on flat pads: level within 10 units, blending back over the next 6 */
+    if (w->village.n && w->village.body == i) {
+        for (int k = 0; k < w->village.n; k++) {
+            const house *hs = &w->village.h[k];
+            float dd = v3_dot(dir, hs->dir);
+            if (dd < 0.98f) continue;
+            float units = acosf(dd > 1 ? 1 : dd) * b->radius;
+            if (units > 16.0f) continue;
+            float t = units < 10.0f ? 0 : (units - 10.0f) / 6.0f;
+            t = t * t * (3 - 2 * t);
+            h = hs->pad_h + (h - hs->pad_h) * t;
+        }
+    }
     return h;
+}
+
+v3 world_spawn_dir(const world *w, int bi) {
+    /* stand where the sun is about 45 degrees above the horizon, on land */
+    const body *b = &w->b[bi];
+    v3 up = v3_norm(v3_add(v3_norm(v3_scale(b->pos, -1.0f)), v3_(0, 1, 0)));
+    v3 axis = v3_any_perp(up), best = up;
+    float best_h = world_height_raw(w, bi, up), want = b->sea_level + 0.2f * b->amp;
+    for (int k = 1; k < 64 && best_h < want; k++) {
+        v3 c = v3_rotate(up, axis, 0.08f * k);
+        float h = world_height_raw(w, bi, c);
+        if (h > best_h) { best_h = h; best = c; }
+    }
+    return best;
+}
+
+int world_near_house(const world *w, int i, v3 dir, float units) {
+    if (!w->village.n || w->village.body != i) return 0;
+    for (int k = 0; k < w->village.n; k++) {
+        float dd = v3_dot(dir, w->village.h[k].dir);
+        if (dd > 0.9f && acosf(dd > 1 ? 1 : dd) * w->b[i].radius < units) return 1;
+    }
+    return 0;
 }
 
 float world_grid_height(const world *w, int i, int ring, int seg) {

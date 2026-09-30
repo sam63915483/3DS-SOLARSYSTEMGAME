@@ -418,6 +418,7 @@ mesh mesh_grass(const world *w, int bi, int cell) {
         float raw = world_height_raw(w, bi, dir);
         float lf = (raw - b->sea_level) / (b->amp - b->sea_level);
         if (lf < 0.07f || lf > 0.55f) continue;   /* grassland only */
+        if (world_near_house(w, bi, dir, 9.0f)) continue;   /* not through the floors */
         placed++;
         if (grass_cell_of(dir) != cell) continue;
         if (m.count + 15 > total / 3 * 15) break;
@@ -540,6 +541,145 @@ mesh mesh_astronaut(astro_part part) {
         emit_box(&m, v3_(0, -0.56f, 0), AX, AY, AZ, 0.11f, 0.17f, 0.12f, SUIT2);
         emit_box(&m, v3_(0, -0.80f, 0.04f), AX, AY, AZ, 0.13f, 0.07f, 0.18f, DARK);
         break;
+    }
+    return m;
+}
+
+/* ---- the village ---- */
+
+/* A quad from four corners, both faces (walls are seen from inside and out). */
+static void emit_quad2(mesh *m, v3 a, v3 b, v3 c, v3 d, uint32_t col) {
+    v3 centre = v3_scale(v3_add(v3_add(a, b), v3_add(c, d)), 0.25f);
+    v3 n = v3_norm(v3_cross(v3_sub(b, a), v3_sub(d, a)));
+    v3 out = v3_add(centre, n), in = v3_sub(centre, n);
+    emit_tri(m, a, b, c, in, col); emit_tri(m, a, c, d, in, col);
+    emit_tri(m, a, b, c, out, col); emit_tri(m, a, c, d, out, col);
+}
+
+#define CLAY   0xC8784AFF
+#define CLAY2  0xA8603AFF
+#define TEAL   0x4A9C9CFF
+#define TEAL2  0x3A7C7CFF
+#define TIMBER 0x6A4A32FF
+#define PLINTH 0x50485AFF
+#define FLOOR0 0xB89870FF
+#define FLOOR1 0x70605AFF
+
+mesh mesh_house(int style) {
+    mesh m = { 0, 0, 0, 0 };
+    m.v = calloc(4000, sizeof(vertex));
+    if (style == 0) {
+        /* the dome: a hemisphere of quads, both faces, a gap for the door in the lower rings,
+           a darker band at the base and a round floor */
+        const int rings = 6, segs = 16;
+        for (int i = 0; i < rings; i++) {
+            float t0 = (float)M_PI * 0.5f * i / rings, t1 = (float)M_PI * 0.5f * (i + 1) / rings;
+            for (int j = 0; j < segs; j++) {
+                float a0 = 2 * (float)M_PI * j / segs, a1 = 2 * (float)M_PI * (j + 1) / segs;
+                float am = 0.5f * (a0 + a1);
+                /* the door: straight out along +z, the two lowest rings */
+                float door = am; while (door > (float)M_PI) door -= 2 * (float)M_PI;
+                if (i < 2 && fabsf(door) < 0.34f) continue;
+                v3 p00 = v3_(sinf(a0) * cosf(t0) * 4.2f, sinf(t0) * 4.2f, cosf(a0) * cosf(t0) * 4.2f);
+                v3 p10 = v3_(sinf(a1) * cosf(t0) * 4.2f, sinf(t0) * 4.2f, cosf(a1) * cosf(t0) * 4.2f);
+                v3 p11 = v3_(sinf(a1) * cosf(t1) * 4.2f, sinf(t1) * 4.2f, cosf(a1) * cosf(t1) * 4.2f);
+                v3 p01 = v3_(sinf(a0) * cosf(t1) * 4.2f, sinf(t1) * 4.2f, cosf(a0) * cosf(t1) * 4.2f);
+                uint32_t col = i == 0 ? CLAY2 : ((i + j) & 1 ? CLAY : shade(CLAY, 0.92f));
+                emit_quad2(&m, p00, p10, p11, p01, col);
+            }
+        }
+        /* the floor */
+        for (int j = 0; j < segs; j++) {
+            float a0 = 2 * (float)M_PI * j / segs, a1 = 2 * (float)M_PI * (j + 1) / segs;
+            emit_tri(&m, v3_(0, 0.04f, 0), v3_(sinf(a0) * 4.1f, 0.04f, cosf(a0) * 4.1f), v3_(sinf(a1) * 4.1f, 0.04f, cosf(a1) * 4.1f), v3_(0, -1, 0), (j & 1) ? FLOOR0 : shade(FLOOR0, 0.9f));
+        }
+        /* a rug and a low table */
+        emit_box(&m, v3_(-1.4f, 0.06f, -1.2f), AX, AY, AZ, 1.3f, 0.01f, 1.0f, 0x8A3A48FF);
+        emit_box(&m, v3_(1.6f, 0.35f, -0.4f), AX, AY, AZ, 0.7f, 0.05f, 0.5f, TIMBER);
+        emit_prism(&m, v3_(1.6f, 0, -0.4f), 0.12f, 0.0f, 0.3f, TIMBER);
+    } else {
+        /* the lodge: four walls (the front with a doorway), a slanting roof, a plinth, a chimney,
+           a floor, a bunk and a stool */
+        float hx = 3.6f, hz = 3.0f, wh = 3.4f, rh = 5.0f, dw = 1.0f, dh = 2.4f;
+        /* side walls: trapezoids up to the sloping roof (high at the back, -z) */
+        emit_quad2(&m, v3_(-hx, 0, -hz), v3_(-hx, 0, hz), v3_(-hx, wh, hz), v3_(-hx, rh, -hz), TEAL);
+        emit_quad2(&m, v3_(hx, 0, -hz), v3_(hx, 0, hz), v3_(hx, wh, hz), v3_(hx, rh, -hz), TEAL2);
+        emit_quad2(&m, v3_(-hx, 0, -hz), v3_(hx, 0, -hz), v3_(hx, rh, -hz), v3_(-hx, rh, -hz), TEAL);   /* back */
+        /* front: two panels beside the door and a lintel above it */
+        emit_quad2(&m, v3_(-hx, 0, hz), v3_(-dw, 0, hz), v3_(-dw, wh, hz), v3_(-hx, wh, hz), TEAL2);
+        emit_quad2(&m, v3_(dw, 0, hz), v3_(hx, 0, hz), v3_(hx, wh, hz), v3_(dw, wh, hz), TEAL2);
+        emit_quad2(&m, v3_(-dw, dh, hz), v3_(dw, dh, hz), v3_(dw, wh, hz), v3_(-dw, wh, hz), TEAL2);
+        /* door frame */
+        emit_box(&m, v3_(-dw - 0.08f, dh * 0.5f, hz), AX, AY, AZ, 0.08f, dh * 0.5f, 0.12f, TIMBER);
+        emit_box(&m, v3_(dw + 0.08f, dh * 0.5f, hz), AX, AY, AZ, 0.08f, dh * 0.5f, 0.12f, TIMBER);
+        emit_box(&m, v3_(0, dh + 0.08f, hz), AX, AY, AZ, dw + 0.16f, 0.08f, 0.12f, TIMBER);
+        /* the roof, overhanging a little */
+        emit_quad2(&m, v3_(-hx - 0.4f, wh + 0.02f, hz + 0.4f), v3_(hx + 0.4f, wh + 0.02f, hz + 0.4f), v3_(hx + 0.4f, rh + 0.02f, -hz - 0.3f), v3_(-hx - 0.4f, rh + 0.02f, -hz - 0.3f), TIMBER);
+        emit_box(&m, v3_(2.2f, rh - 0.2f, -1.8f), AX, AY, AZ, 0.35f, 0.9f, 0.35f, PLINTH);   /* chimney */
+        /* plinth band and floor */
+        emit_box(&m, v3_(0, 0.18f, 0), AX, AY, AZ, hx + 0.12f, 0.18f, hz + 0.12f, PLINTH);
+        emit_box(&m, v3_(0, 0.38f, 0), AX, AY, AZ, hx - 0.1f, 0.02f, hz - 0.1f, FLOOR1);
+        /* a bunk against the back wall and a stool */
+        emit_box(&m, v3_(-1.9f, 0.7f, -2.2f), AX, AY, AZ, 1.3f, 0.3f, 0.7f, 0x8A6A4AFF);
+        emit_box(&m, v3_(-1.9f, 1.05f, -2.2f), AX, AY, AZ, 1.2f, 0.06f, 0.6f, 0x6A5AA0FF);
+        emit_prism(&m, v3_(2.4f, 0.4f, 0.8f), 0.3f, 0.0f, 0.45f, TIMBER);
+    }
+    return m;
+}
+
+mesh mesh_house_glow(int style) {
+    mesh m = { 0, 0, 0, 0 };
+    m.v = calloc(400, sizeof(vertex));
+    if (style == 0) {
+        /* a lantern hanging from the top of the dome */
+        emit_sphere(&m, v3_(0, 3.4f, 0), 0.22f, 0xFFD890FF);
+    } else {
+        /* windows in the side walls, lit from within */
+        float hx = 3.6f;
+        emit_box(&m, v3_(-hx, 2.0f, 0.6f), AX, AY, AZ, 0.02f, 0.45f, 0.45f, 0xFFE0A0FF);
+        emit_box(&m, v3_(hx, 2.0f, -0.8f), AX, AY, AZ, 0.02f, 0.45f, 0.45f, 0xFFE0A0FF);
+        emit_box(&m, v3_(hx, 2.0f, 1.2f), AX, AY, AZ, 0.02f, 0.45f, 0.45f, 0xFFE0A0FF);
+    }
+    return m;
+}
+
+mesh mesh_alien(int style) {
+    mesh m = { 0, 0, 0, 0 };
+    m.v = calloc(1200, sizeof(vertex));
+    if (style == 0) {
+        /* VESK: tall and thin, a long green body, a big pale head, three eyes, dangling arms */
+        emit_prism(&m, v3_(0, 0, 0), 0.30f, 0.0f, 1.6f, 0x6CC85AFF);
+        emit_prism(&m, v3_(0, 0, 0), 0.34f, 0.55f, 0.75f, 0x4E9A44FF);   /* a belt */
+        emit_sphere(&m, v3_(0, 2.05f, 0), 0.48f, 0xA8E890FF);
+        emit_box(&m, v3_(-0.42f, 1.0f, 0), AX, AY, AZ, 0.07f, 0.55f, 0.07f, 0x6CC85AFF);
+        emit_box(&m, v3_(0.42f, 1.0f, 0), AX, AY, AZ, 0.07f, 0.55f, 0.07f, 0x6CC85AFF);
+        emit_box(&m, v3_(-0.16f, -0.0f, 0), AX, AY, AZ, 0.1f, 0.02f, 0.18f, 0x4E9A44FF);   /* feet */
+        emit_box(&m, v3_(0.16f, -0.0f, 0), AX, AY, AZ, 0.1f, 0.02f, 0.18f, 0x4E9A44FF);
+    } else {
+        /* MOMO: short and round, purple, one big eye, an antenna with a bobble, stubby legs */
+        emit_sphere(&m, v3_(0, 0.8f, 0), 0.62f, 0x9A5AC8FF);
+        emit_box(&m, v3_(-0.25f, 0.12f, 0), AX, AY, AZ, 0.14f, 0.12f, 0.16f, 0x7A42A8FF);
+        emit_box(&m, v3_(0.25f, 0.12f, 0), AX, AY, AZ, 0.14f, 0.12f, 0.16f, 0x7A42A8FF);
+        emit_box(&m, v3_(0, 1.65f, 0), AX, AY, AZ, 0.04f, 0.28f, 0.04f, 0x7A42A8FF);   /* antenna */
+        emit_box(&m, v3_(-0.55f, 0.75f, 0.1f), AX, AY, AZ, 0.12f, 0.08f, 0.2f, 0x7A42A8FF);   /* little arms */
+        emit_box(&m, v3_(0.55f, 0.75f, 0.1f), AX, AY, AZ, 0.12f, 0.08f, 0.2f, 0x7A42A8FF);
+    }
+    return m;
+}
+
+mesh mesh_alien_glow(int style) {
+    mesh m = { 0, 0, 0, 0 };
+    m.v = calloc(600, sizeof(vertex));
+    if (style == 0) {
+        /* three dark eyes with bright pupils across the front of the head */
+        for (int k = -1; k <= 1; k++) {
+            emit_sphere(&m, v3_(k * 0.2f, 2.12f, 0.40f), 0.09f, 0x202030FF);
+            emit_sphere(&m, v3_(k * 0.2f, 2.12f, 0.47f), 0.035f, 0xFFF0C0FF);
+        }
+    } else {
+        emit_sphere(&m, v3_(0, 0.92f, 0.50f), 0.24f, 0xF4F4FFFF);   /* one big eye */
+        emit_sphere(&m, v3_(0, 0.92f, 0.70f), 0.10f, 0x202030FF);
+        emit_sphere(&m, v3_(0, 1.98f, 0), 0.1f, 0xFFA040FF);   /* the bobble */
     }
     return m;
 }

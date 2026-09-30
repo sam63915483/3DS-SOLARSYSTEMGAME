@@ -14,6 +14,7 @@
 #include "school.h"
 #include "fireflies.h"
 #include "dust.h"
+#include "village.h"
 
 static float pad_axis(int v) {
     float a = v / 156.0f;
@@ -25,7 +26,7 @@ static float pad_axis(int v) {
 /* Where the rod is held: the right hand of the model in third person, the lower right of the
    view in first person, with the plane the rod swings in. */
 static void rod_hand(const player *p, const camera *c, const fishing *fish, v3 *butt, v3 *fwd, v3 *up) {
-    if (c->fp > 0.5f) {
+    if (c->inside > 0.5f) {
         v3 right = v3_norm(v3_cross(c->view, c->view_up));
         *butt = v3_add(v3_add(v3_add(c->pos, v3_scale(right, 0.38f)), v3_scale(c->view_up, -0.32f)), v3_scale(c->view, 0.25f));
         *fwd = c->view; *up = c->view_up;
@@ -235,6 +236,7 @@ int main(void) {
         }
         school_update(&sch, &w, &p, dt);
         fireflies_update(&ff, &w, &p, dt);
+        village_update(&w, &p, dt);
 
         C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
         render_scene(&w, &p, &cam, &fish, &sch, &ff, &du, w.t);

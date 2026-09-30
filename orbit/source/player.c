@@ -1,5 +1,6 @@
 #include "player.h"
 #include "moon.h"
+#include "village.h"
 
 #define BODY_TURN_RATE 6.0f   /* how fast the model turns onto its target orientation, 1/s */
 #define WALK_SPEED   8.0f
@@ -15,19 +16,7 @@
 #define FLOAT_DEPTH  0.55f  /* where the centre settles while floating */
 
 void player_spawn(player *p, const world *w, int bi) {
-    /* stand where the sun is about 45 degrees above the horizon, on land */
-    v3 up = v3_norm(v3_add(v3_norm(v3_scale(w->b[bi].pos, -1.0f)), v3_(0, 1, 0)));
-    {
-        const body *b = &w->b[bi];
-        v3 axis = v3_any_perp(up), best = up;
-        float best_h = world_height_raw(w, bi, up), want = b->sea_level + 0.2f * b->amp;
-        for (int k = 1; k < 64 && best_h < want; k++) {
-            v3 c = v3_rotate(up, axis, 0.08f * k);
-            float h = world_height_raw(w, bi, c);
-            if (h > best_h) { best_h = h; best = c; }
-        }
-        up = best;
-    }
+    v3 up = world_spawn_dir(w, bi);
     p->dom = bi;
     p->up = up;
     p->pos = v3_add(w->b[bi].pos, v3_scale(up, world_surface(w, bi, up) + PLAYER_HALF_HEIGHT));
@@ -224,6 +213,7 @@ void player_update(player *p, const world *w, const player_input *in, float dt) 
     if (sp > cap) p->vel = v3_scale(p->vel, cap / sp);
     p->pos = v3_add(p->pos, v3_scale(p->vel, dt));
     collide_props(p, w);
+    village_collide(w, p);
 
     /* surface contact */
     int touching = 0;
