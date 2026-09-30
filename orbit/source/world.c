@@ -22,9 +22,9 @@ void world_init(world *w) {
     static const body defs[BODY_COUNT] = {
         /* name     radius  mu         orbit   phase omega emis terrain          amp   freq  sea    liq rings segs seed  atmo        atmo_h */
         { "Sun",    100.0f, MU_SUN,    0,      0.0f, 0, 1, TERRAIN_SUN,     0.0f,  6.0f,  0.0f, 0, 32, 48, 11u, 0x00000000u, 0.0f, 0, {0,0,0}, {0,0,0}, {0,0,0} },
-        { "Ember",   80.0f, 96000.0f,  320.0f, 0.6f, 0, 0, TERRAIN_EMBER,   6.0f,  2.4f, -9.0f, 0, 40, 60, 23u, 0xC0602080u, 40.0f, 0, {0,0,0}, {0,0,0}, {0,0,0} },
+        { "Ember",   80.0f, 96000.0f,  320.0f, 0.6f, 0, 0, TERRAIN_EMBER,   6.0f,  2.4f, -9.0f, 0, 40, 60, 23u, 0xE09058FFu, 40.0f, 0, {0,0,0}, {0,0,0}, {0,0,0} },
         { "Verdant", 128.0f, 212992.0f, 620.0f, 2.4f, 0, 0, TERRAIN_VERDANT, 10.0f, 2.2f, -1.0f, 1, 64, 96, 37u, 0x6AA0F0FFu, 60.0f, 0, {0,0,0}, {0,0,0}, {0,0,0} },
-        { "Frost",   96.0f, 129024.0f, 940.0f, 4.4f, 0, 0, TERRAIN_FROST,   5.0f,  2.4f, -1.0f, 0, 48, 72, 51u, 0xB8D0F0C0u, 45.0f, 0, {0,0,0}, {0,0,0}, {0,0,0} },
+        { "Frost",   96.0f, 129024.0f, 940.0f, 4.4f, 0, 0, TERRAIN_FROST,   5.0f,  2.4f, -1.0f, 0, 48, 72, 51u, 0xB8D0F0FFu, 45.0f, 0, {0,0,0}, {0,0,0}, {0,0,0} },
     };
     w->t = 0;
     for (int i = 0; i < BODY_COUNT; i++) {

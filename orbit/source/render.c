@@ -301,7 +301,17 @@ static float sky_color(const world *w, const player *p, const camera *c, u32 *ou
         float dens = clamp01(1.0f - alt / b->atmo_h);
         v3 up = v3_norm(rel), sun = v3_norm(v3_sub(w->b[BODY_SUN].pos, c->pos));
         float e = v3_dot(up, sun);
-        float day = clamp01((e + 0.12f) / 0.40f);
+        /* the sun is huge in these skies (50 degrees across from Ember): measure from its upper
+           limb, and against the visible horizon, which dips well below level on small planets */
+        e += w->b[BODY_SUN].radius / v3_len(v3_sub(w->b[BODY_SUN].pos, c->pos));
+        {
+            float ratio = b->radius / v3_len(rel);
+            if (ratio > 1) ratio = 1;
+            e += sinf(acosf(ratio));
+        }
+        /* full until the sun nears that horizon, dark a few degrees after it is gone */
+        float day = clamp01((e + 0.10f) / 0.18f);
+        day = day * day * (3.0f - 2.0f * day);
         float strength = (b->atmo & 0xFF) / 255.0f;
         k = dens * day * strength;
         float ar = (b->atmo >> 24) & 0xFF, ag = (b->atmo >> 16) & 0xFF, ab = (b->atmo >> 8) & 0xFF;
