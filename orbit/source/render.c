@@ -26,7 +26,7 @@ static C3D_LightEnv lightEnv;
 static C3D_Light light;
 static C3D_LightLut lutPhong;
 
-static gpu_mesh bodies[BODY_COUNT], props[BODY_COUNT][8], grass[BODY_COUNT][GRASS_CELLS];
+static gpu_mesh bodies[BODY_COUNT], bodies_far[BODY_COUNT], props[BODY_COUNT][8], grass[BODY_COUNT][GRASS_CELLS];
 static gpu_mesh water[BODY_COUNT], shell_in[BODY_COUNT], clouds[BODY_COUNT];
 static gpu_mesh astro_body, astro_arm, astro_leg, flame_outer, flame_inner, stars;
 static gpu_mesh rod_seg, bobber_top, bobber_bot, fish_mesh, gem;
@@ -108,6 +108,7 @@ void render_init(const world *w) {
     for (int i = 0; i < BODY_COUNT; i++) {
         const body *b = &w->b[i];
         bodies[i] = upload(mesh_planet(w, i));
+        bodies_far[i] = upload(mesh_planet_lod(w, i, 3));   /* a quarter of the triangles for the far view */
         water[i] = upload(mesh_water(w, i, 0x2058B4C4u));   /* deep blue, alpha 196 */
         for (int o = 0; o < 8; o++) props[i][o] = upload(mesh_props(w, i, o));
         for (int g = 0; g < GRASS_CELLS; g++) grass[i][g] = upload(mesh_grass(w, i, g));
@@ -472,7 +473,7 @@ void render_scene(const world *w, const player *p, const camera *c, const fishin
     prepare_state();
     cur_mode = 0;
 
-    Mtx_PerspTilt(&proj, C3D_AngleFromDegrees(55.0f), C3D_AspectRatioTop, 0.5f, 3.0f * STAR_RADIUS, false);
+    Mtx_PerspTilt(&proj, C3D_AngleFromDegrees(55.0f), C3D_AspectRatioTop, 0.2f, 3.0f * STAR_RADIUS, false);   /* near 0.2: a wall right at the visor never gets clipped open */
     Mtx_LookAt(&view, FVec3_New(c->pos.x, c->pos.y, c->pos.z),
                FVec3_New(c->target.x, c->target.y, c->target.z),
                FVec3_New(c->view_up.x, c->view_up.y, c->view_up.z), false);
@@ -503,20 +504,26 @@ void render_scene(const world *w, const player *p, const camera *c, const fishin
         mtx_translate(&model, b->pos);
         v3 to_cam = v3_sub(c->pos, b->pos);
         float gap = v3_len(to_cam) - b->radius;
-        if (b->caves.enabled) {
-            /* a carved moon: its surface and caves are one mesh in octants; from inside, every
-               octant can be in view, from outside only the near ones */
+        if (gap > 250.0f) {
+            /* far away: the coarse copy (a carved moon's caves are not visible from out here) */
+            draw_ex(&bodies_far[i], &model, b->emissive ? &mat_glow : &mat_lit, has_detail[i] ? &detail[i] : NULL, uMV);
+        } else if (b->caves.enabled) {
+            /* a carved moon: its surface and caves are one mesh in octants. Only when clearly
+               above the ground can the far octants be skipped: from inside, or near the mouths,
+               any of them may be in view down a tunnel */
             v3 d = v3_norm(to_cam);
+            C3D_CullFace(GPU_CULL_NONE);   /* double sided: a mis-wound triangle shows rock behind it, never sky */
             for (int o = 0; o < 8; o++) {
                 v3 od = v3_norm(v3_((o & 1) ? -1 : 1, (o & 2) ? -1 : 1, (o & 4) ? -1 : 1));
-                if (gap > 0 && v3_dot(od, d) < -0.35f) continue;
+                if (gap > b->amp + 6.0f && v3_dot(od, d) < -0.5f) continue;
                 draw_ex(&moon_oct[i][o], &model, &mat_moon, has_detail[i] ? &detail[i] : NULL, uMV);
             }
-            if (gap < 120.0f) {   /* crystals glow; the orb at the heart breathes */
-                C3D_Material orb = mat_glow;
+            C3D_CullFace(GPU_CULL_BACK_CCW);
+            if (gap < 120.0f) {   /* the crystals glow, breathing a little */
+                C3D_Material glow = mat_glow;
                 float pulse = 0.85f + 0.15f * sinf(time * 2.2f);
-                orb.emission[0] = orb.emission[1] = orb.emission[2] = pulse;
-                draw(&moon_gems[i], &model, &orb);
+                glow.emission[0] = glow.emission[1] = glow.emission[2] = pulse;
+                draw(&moon_gems[i], &model, &glow);
             }
         } else {
             draw_ex(&bodies[i], &model, b->emissive ? &mat_glow : &mat_lit, has_detail[i] ? &detail[i] : NULL, uMV);
@@ -590,7 +597,7 @@ void render_scene(const world *w, const player *p, const camera *c, const fishin
     /* where the sun lands on the screen, for the lens flare (an untilted projection gives
        ordinary screen axes) */
     sun_k = 0;
-    Mtx_Persp(&proj2, C3D_AngleFromDegrees(55.0f), C3D_AspectRatioTop, 0.5f, 3.0f * STAR_RADIUS, false);
+    Mtx_Persp(&proj2, C3D_AngleFromDegrees(55.0f), C3D_AspectRatioTop, 0.2f, 3.0f * STAR_RADIUS, false);
     {
         C3D_FVec vs = Mtx_MultiplyFVec4(&view, FVec4_New(sp.x, sp.y, sp.z, 1.0f));
         C3D_FVec cs = Mtx_MultiplyFVec4(&proj2, vs);
@@ -631,7 +638,7 @@ C3D_RenderTarget *render_top_target(void) { return top; }
 
 void render_fini(void) {
     for (int i = 0; i < BODY_COUNT; i++) {
-        gpu_free(&bodies[i]); gpu_free(&water[i]); gpu_free(&shell_in[i]); gpu_free(&clouds[i]);
+        gpu_free(&bodies[i]); gpu_free(&bodies_far[i]); gpu_free(&water[i]); gpu_free(&shell_in[i]); gpu_free(&clouds[i]);
         for (int o = 0; o < 8; o++) gpu_free(&props[i][o]);
         for (int g = 0; g < GRASS_CELLS; g++) gpu_free(&grass[i][g]);
         if (has_detail[i]) C3D_TexDelete(&detail[i]);

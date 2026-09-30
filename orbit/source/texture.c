@@ -3,7 +3,7 @@
 #include <string.h>
 #include <stdlib.h>
 
-#define TEX_SIZE 64
+#define TEX_SIZE 128   /* sharp up close; the mipmaps take over as you fly away */
 
 /* Periodic 2D value noise over `cells` lattice cells across [0,1), so it tiles. */
 static float pnoise(float u, float v, int cells, uint32_t seed) {
@@ -43,27 +43,37 @@ static void texel(detail_kind kind, float u, float v, int px, int py, uint32_t s
         break;
     }
     case DETAIL_GRASS: {
+        /* patches of lighter and darker turf, streaky blades, the odd bare speck of earth */
         float base = pfbm(u, v, 4, 3, seed);
-        float fine = pfbm(u, v, 16, 2, seed + 7u);
-        br = 0.82f + (base - 0.5f) * 0.5f;
-        if (fine > 0.62f) br -= 0.14f;          /* dark blades */
-        else if (fine < 0.36f) br += 0.10f;     /* light tips */
-        tr = 0.94f; tg = 1.04f; tb = 0.9f;
+        float blades = pfbm(u * 1.0f, v * 6.0f, 18, 2, seed + 7u);   /* stretched along v: blades */
+        float fine = pfbm(u, v, 24, 2, seed + 11u);
+        br = 0.78f + (base - 0.5f) * 0.6f;
+        if (blades > 0.60f) br -= 0.18f;
+        else if (blades < 0.40f) br += 0.12f;
+        if (fine > 0.72f) { br *= 0.8f; tr = 1.08f; tg = 0.96f; tb = 0.85f; }   /* earth showing through */
+        else { tr = 0.92f; tg = 1.06f; tb = 0.88f; }
         break;
     }
     case DETAIL_ROCK: {
-        float ridge = fabsf(pfbm(u, v, 5, 2, seed) - 0.5f) * 2.0f;   /* 0 at the cracks */
-        float grain = pfbm(u, v, 14, 2, seed + 3u);
-        float crack = clamp01(ridge * 5.0f);
-        br = 0.62f + crack * 0.34f + (grain - 0.5f) * 0.18f;
-        tr = 1.03f; tg = 0.98f; tb = 0.95f;
+        /* two scales of cracks, pitted grain, and pale mineral flecks */
+        float ridge = fabsf(pfbm(u, v, 5, 2, seed) - 0.5f) * 2.0f;          /* 0 at the big cracks */
+        float ridge2 = fabsf(pfbm(u, v, 13, 2, seed + 5u) - 0.5f) * 2.0f;    /* 0 at the fine cracks */
+        float grain = pfbm(u, v, 20, 3, seed + 3u);
+        float crack = clamp01(ridge * 4.0f), crack2 = clamp01(ridge2 * 6.0f);
+        br = 0.50f + crack * 0.30f + crack2 * 0.14f + (grain - 0.5f) * 0.28f;
+        if (noise_hashf(px, py, 3, seed) > 0.975f) br += 0.25f;   /* fleck */
+        tr = 1.04f; tg = 0.99f; tb = 0.94f;
         break;
     }
     case DETAIL_SNOW: {
-        float base = pfbm(u, v, 5, 3, seed);
-        br = 0.90f + (base - 0.5f) * 0.18f;
-        if (noise_hashf(px, py, 3, seed) > 0.985f) br = 1.15f;   /* sparkle */
-        tr = 0.97f; tg = 0.99f; tb = 1.04f;
+        /* wind-packed drifts with faint blue cracks and sparkle */
+        float base = pfbm(u * 3.0f, v, 5, 3, seed);   /* stretched: drifts */
+        float crack = fabsf(pfbm(u, v, 7, 2, seed + 9u) - 0.5f) * 2.0f;
+        br = 0.88f + (base - 0.5f) * 0.26f;
+        if (crack < 0.08f) { br -= 0.18f; tb = 1.12f; }
+        else tb = 1.04f;
+        if (noise_hashf(px, py, 3, seed) > 0.985f) br = 1.18f;   /* sparkle */
+        tr = 0.97f; tg = 0.99f;
         break;
     }
     case DETAIL_WATER: {

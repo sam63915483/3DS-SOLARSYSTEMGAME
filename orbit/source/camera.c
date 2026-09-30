@@ -17,7 +17,7 @@ static void orthonormalize(camera *c) {
     c->view_up = v3_len(c->view_up) < 1e-4f ? v3_any_perp(c->view) : v3_norm(c->view_up);
 }
 
-#define EYE_HEIGHT 0.72f
+#define EYE_HEIGHT 0.55f   /* below the head sphere's clearance, so a low ceiling never crosses the eye */
 #define VIEW_SWITCH_TIME 0.6f
 
 static void place(camera *c, const world *w, const player *p, float dt) {
@@ -29,11 +29,14 @@ static void place(camera *c, const world *w, const player *p, float dt) {
         /* a carved moon: trace back from the player through the field and stop short of the
            rock. The allowed distance closes in at once but opens back out gently, so the camera
            never clips and never jumps. */
+        /* the point we look at must itself be in the air (a low ceiling can put it in rock) */
+        for (int k = 0; k < 6 && moon_field(w, p->dom, v3_sub(tp_target, b->pos)) > -0.8f; k++)
+            tp_target = v3_lerp(tp_target, p->pos, 0.3f);
         float full = v3_len(v3_sub(tp_pos, tp_target)), allowed = 0;
-        for (int k = 1; k <= 24; k++) {
-            v3 q = v3_lerp(tp_target, tp_pos, k / 24.0f);
-            if (moon_field(w, p->dom, v3_sub(q, b->pos)) > -0.5f) break;
-            allowed = full * k / 24.0f;
+        for (int k = 1; k <= 32; k++) {
+            v3 q = v3_lerp(tp_target, tp_pos, k / 32.0f);
+            if (moon_field(w, p->dom, v3_sub(q, b->pos)) > -1.0f) break;   /* a full unit clear of rock */
+            allowed = full * k / 32.0f;
         }
         float frac = full > 1e-3f ? allowed / full : 1.0f;
         if (frac < c->cam_back) c->cam_back = frac;

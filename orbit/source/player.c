@@ -87,18 +87,49 @@ static void switch_frame(player *p, const world *w, int to) {
 static int moon_contact(player *p, const world *w, int i, int jumped) {
     const body *b = &w->b[i];
     v3 rel = v3_sub(p->pos, b->pos);
+    v3 up = v3_norm(rel);
+    int touching = 0;
+    /* the head: a smaller sphere above the centre so low ceilings push you down, not through */
+    {
+        v3 head = v3_add(rel, v3_scale(up, 0.55f));
+        float gap = -moon_field(w, i, head) - 0.7f;
+        if (gap < 0) {
+            v3 g = moon_grad_wide(w, i, head, 0.5f);
+            v3 n = v3_len(g) > 1e-5f ? v3_norm(v3_scale(g, -1.0f)) : v3_scale(up, -1.0f);
+            p->pos = v3_add(p->pos, v3_scale(n, -gap));
+            rel = v3_sub(p->pos, b->pos);
+            float into = v3_dot(p->vel, n);
+            if (into < 0) p->vel = v3_sub(p->vel, v3_scale(n, into));
+        }
+    }
+    /* the body: a sphere the size of the half height, pushed out along a smoothed gradient
+       so small bumps read as bumps, not walls */
     float d = moon_field(w, i, rel);
     float gap = -d - PLAYER_HALF_HEIGHT;   /* clearance between the sphere and the rock */
     int snap = p->grounded && !jumped && i == p->dom;
     if (gap > (snap ? GROUND_SNAP : 0.0f)) return 0;
-    v3 g = moon_grad(w, i, rel);
-    v3 n = v3_len(g) > 1e-5f ? v3_norm(v3_scale(g, -1.0f)) : v3_norm(rel);   /* out of the rock */
+    v3 g = moon_grad_wide(w, i, rel, 0.5f);
+    v3 n = v3_len(g) > 1e-5f ? v3_norm(v3_scale(g, -1.0f)) : up;   /* out of the rock */
+    int floor_like = v3_dot(n, up) > 0.35f;   /* up to about 70 degrees counts as ground */
+    if (!floor_like && p->grounded && !jumped && gap < 0) {
+        /* a wall in the way while walking: if there is room a step up, take the step */
+        v3 lifted = v3_add(rel, v3_scale(up, 0.6f));
+        if (-moon_field(w, i, lifted) - PLAYER_HALF_HEIGHT > -0.05f) {
+            p->pos = v3_add(p->pos, v3_scale(up, 0.6f));
+            rel = lifted;
+            gap = -moon_field(w, i, rel) - PLAYER_HALF_HEIGHT;
+            g = moon_grad_wide(w, i, rel, 0.5f);
+            n = v3_len(g) > 1e-5f ? v3_norm(v3_scale(g, -1.0f)) : up;
+            floor_like = 1;
+            touching = 1;
+        }
+    }
     if (gap < 0 || snap) p->pos = v3_add(p->pos, v3_scale(n, -gap));
     switch_frame(p, w, i);
-    p->up = v3_norm(rel);
+    p->up = up;
     float into = v3_dot(p->vel, n);
     if (into < 0 || snap) p->vel = v3_sub(p->vel, v3_scale(n, into));
-    return v3_dot(n, p->up) > 0.5f;
+    return floor_like || touching;
 }
 
 void player_update(player *p, const world *w, const player_input *in, float dt) {

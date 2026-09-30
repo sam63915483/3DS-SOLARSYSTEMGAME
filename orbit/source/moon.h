@@ -11,8 +11,10 @@
 void moon_setup(world *w, int i);
 /* The field at rel (from the body's centre): > 0 inside rock, < 0 in air, roughly a distance. */
 float moon_field(const world *w, int i, v3 rel);
-/* Gradient of the field: points into the rock. */
+/* Gradient of the field: points into the rock. The wide form averages over +-e, which smooths
+   small bumps out of collision normals. */
 v3 moon_grad(const world *w, int i, v3 rel);
+v3 moon_grad_wide(const world *w, int i, v3 rel, float e);
 /* How far below the terrain surface rel is (positive underground). */
 float moon_depth(const world *w, int i, v3 rel);
 /* Meshes the whole moon, caves included, into 8 octant meshes in body space. */

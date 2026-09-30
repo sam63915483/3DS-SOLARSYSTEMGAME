@@ -50,6 +50,9 @@ mesh mesh_fish(void);
 mesh mesh_gem(float r, uint32_t col);
 /* Building blocks for meshes made elsewhere (cavemesh.c). The mesh must have room. */
 void mesh_put(mesh *m, v3 p, v3 n, uint32_t col);
+void mesh_put_uv(mesh *m, v3 p, v3 n, uint32_t col, float u, float v);
+/* Body i at 1/div the grid resolution, for drawing from far away. */
+mesh mesh_planet_lod(const world *w, int i, int div);
 /* One triangle wound so its normal points away from `inside`, flat shaded. */
 void mesh_tri(mesh *m, v3 a, v3 b, v3 c, v3 inside, uint32_t col);
 /* One triangle with the given per-vertex normals, wound so the face agrees with them. */

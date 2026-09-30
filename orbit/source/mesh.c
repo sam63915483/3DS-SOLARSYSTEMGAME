@@ -473,6 +473,26 @@ mesh mesh_gem(float r, uint32_t col) {
 }
 
 void mesh_put(mesh *m, v3 p, v3 n, uint32_t col) { put(&m->v[m->count++], p, n, col); }
+void mesh_put_uv(mesh *m, v3 p, v3 n, uint32_t col, float u, float v) {
+    vertex *vx = &m->v[m->count++];
+    put(vx, p, n, col);
+    vx->uv[0] = u; vx->uv[1] = v;
+}
+
+/* A coarser copy of a body for when it is far away: the same heights sampled on a grid div
+   times sparser, so it costs a fraction of the triangles. */
+static float lod_radius(const void *c, v3 dir, int ring, int seg) {
+    const sphere_ctx *s = c; (void)ring; (void)seg;
+    return world_surface(s->w, s->i, dir);
+}
+mesh mesh_planet_lod(const world *w, int i, int div) {
+    sphere_ctx c = { w, i, 0, 0 };
+    float rep = w->b[i].emissive ? 0 : w->b[i].radius / 4.0f;
+    int rings = w->b[i].rings / div, segs = w->b[i].segs / div;
+    if (rings < 8) rings = 8;
+    if (segs < 12) segs = 12;
+    return sphere_grid(rings, segs, rep, lod_radius, planet_color, &c, 1);
+}
 void mesh_tri(mesh *m, v3 a, v3 b, v3 c, v3 inside, uint32_t col) { emit_tri(m, a, b, c, inside, col); }
 void mesh_tri_n(mesh *m, v3 a, v3 na, v3 b, v3 nb, v3 c, v3 nc, uint32_t ca, uint32_t cb, uint32_t cc) {
     v3 face = v3_cross(v3_sub(b, a), v3_sub(c, a));

@@ -91,6 +91,25 @@ int main(void) {
             CHECK(total / 3 > 3000, "the moon mesh has thousands of triangles");
             CHECK(off < total / 200, "vertices sit on the surface of the field");
             CHECK(flipped < total / 200, "normals point out of the rock");
+            /* every triangle faces out of the rock: its winding normal disagrees with the gradient */
+            int inward = 0, ntri = 0;
+            {
+                mesh oct2[8];
+                moon_build(&w, moons[m], oct2);
+                for (int o = 0; o < 8; o++) {
+                    for (int t = 0; t + 2 < oct2[o].idx_count; t += 3) {
+                        const vertex *a = &oct2[o].v[oct2[o].idx[t]], *bb = &oct2[o].v[oct2[o].idx[t + 1]], *cc = &oct2[o].v[oct2[o].idx[t + 2]];
+                        v3 pa = v3_(a->pos[0], a->pos[1], a->pos[2]), pb = v3_(bb->pos[0], bb->pos[1], bb->pos[2]), pc = v3_(cc->pos[0], cc->pos[1], cc->pos[2]);
+                        v3 face = v3_cross(v3_sub(pb, pa), v3_sub(pc, pa));
+                        v3 centre = v3_scale(v3_add(v3_add(pa, pb), pc), 1.0f / 3.0f);
+                        if (v3_dot(face, moon_grad_wide(&w, moons[m], centre, 0.5f)) > 0) inward++;
+                        ntri++;
+                    }
+                    mesh_free(&oct2[o]);
+                }
+            }
+            printf("     (%d of %d triangles wound inward)\n", inward, ntri);
+            CHECK(inward < ntri / 100, "triangles are wound to face out of the rock (no culled holes)");
             mesh gm = moon_crystals(&w, moons[m]);
             CHECK(gm.count >= 24 * 8, "crystals and the orb exist");
             mesh_free(&gm);
@@ -124,7 +143,7 @@ int main(void) {
                 if (i % 60 == 59) { if (v3_len(v3_sub(p.pos, last)) < 0.5f) stuck++; last = p.pos; }
             }
             CHECK(moon_field(&w, moons[m], v3_sub(p.pos, b->pos)) < 0, "after walking 5 s the player is still in open air, not in rock");
-            CHECK(stuck <= 2, "and kept moving most of the time");
+            CHECK(stuck == 0, "and never got stuck");
             camera cam; camera_init(&cam, &p);
             camera_input cin; memset(&cin, 0, sizeof cin);
             for (int i = 0; i < 90; i++) camera_update(&cam, &w, &p, &cin, DT);

@@ -58,12 +58,13 @@ float moon_field(const world *w, int bi, v3 rel) {
     return field(w, bi, rel, NULL, c->nseg + c->nblob);
 }
 
-v3 moon_grad(const world *w, int bi, v3 rel) {
-    const float e = 0.2f;
+v3 moon_grad_wide(const world *w, int bi, v3 rel, float e) {
     return v3_((moon_field(w, bi, v3_add(rel, v3_(e, 0, 0))) - moon_field(w, bi, v3_sub(rel, v3_(e, 0, 0)))) / (2 * e),
                (moon_field(w, bi, v3_add(rel, v3_(0, e, 0))) - moon_field(w, bi, v3_sub(rel, v3_(0, e, 0)))) / (2 * e),
                (moon_field(w, bi, v3_add(rel, v3_(0, 0, e))) - moon_field(w, bi, v3_sub(rel, v3_(0, 0, e)))) / (2 * e));
 }
+
+v3 moon_grad(const world *w, int bi, v3 rel) { return moon_grad_wide(w, bi, rel, 0.2f); }
 
 float moon_depth(const world *w, int bi, v3 rel) {
     float R = v3_len(rel);
@@ -220,9 +221,6 @@ mesh moon_crystals(const world *w, int bi) {
         v3 up = g[i].n, r = v3_any_perp(up), f = v3_cross(r, up);
         mesh_octa(&m, v3_add(g[i].pos, v3_scale(up, g[i].s * 0.5f)), r, up, f, g[i].s * 0.45f, g[i].s * 1.2f, g[i].s * 0.45f, g[i].col);
     }
-    float o = c->core_r * 0.09f;   /* the orb at the heart */
-    mesh_octa(&m, v3_(0, 0, 0), v3_(1, 0, 0), v3_(0, 1, 0), v3_(0, 0, 1), o, o, o, 0xFFD080FF);
-    mesh_octa(&m, v3_(0, 0, 0), v3_norm(v3_(1, 1, 0)), v3_norm(v3_(-1, 1, 0)), v3_(0, 0, 1), o * 0.9f, o * 0.9f, o * 1.3f, 0xFFF0C0FF);
     return m;
 }
 
@@ -376,7 +374,14 @@ void moon_build(const world *w, int bi, mesh out[8]) {
                 for (int v = 0; v < nv; v++) {
                     if (!(used[v] & (1 << o))) { oidx[v * 8 + o] = -1; continue; }
                     oidx[v * 8 + o] = out[o].count;
-                    mesh_put(&out[o], verts[v].p, verts[v].n, verts[v].col);
+                    /* detail texture: spherical mapping like the planets, with the seam placed
+                       on the far side of this octant so no triangle straddles it */
+                    v3 dir = v3_norm(verts[v].p);
+                    float th = acosf(dir.y > 1 ? 1 : (dir.y < -1 ? -1 : dir.y)), ph = atan2f(dir.z, dir.x);
+                    if (o & 4) { if (ph < 0.5f * (float)M_PI) ph += 2 * (float)M_PI; }   /* z < 0: seam at +z */
+                    else if (ph < -0.5f * (float)M_PI) ph += 2 * (float)M_PI;            /* z >= 0: seam at -z */
+                    float rep = b->radius / 3.0f;
+                    mesh_put_uv(&out[o], verts[v].p, verts[v].n, verts[v].col, ph / (2 * (float)M_PI) * 2 * rep, th / (float)M_PI * rep);
                 }
             }
         }
@@ -411,13 +416,17 @@ void moon_build(const world *w, int bi, mesh out[8]) {
                             used[qa] |= 1 << o; used[qb] |= 1 << o; used[qc] |= 1 << o; used[qd] |= 1 << o;
                             continue;
                         }
-                        /* wind each triangle to agree with the vertex normals (out of the rock) */
+                        /* wind each triangle so its face points out of the rock. The edge's
+                           corner values say which way that is (the air is on the negative
+                           side), which is reliable even where the gradient is not */
+                        v3 want = v3_(axis == 0, axis == 1, axis == 2);
+                        if (v0 > 0) want = v3_scale(want, -1.0f);   /* rock at the low corner: air is toward -axis... */
+                        want = v3_scale(want, -1.0f);               /* ...and the face must point into the air */
                         int tris[2][3] = { { qa, qb, qc }, { qa, qc, qd } };
                         for (int t = 0; t < 2; t++) {
                             int a = tris[t][0], bq = tris[t][1], cq = tris[t][2];
                             v3 face = v3_cross(v3_sub(verts[bq].p, verts[a].p), v3_sub(verts[cq].p, verts[a].p));
-                            v3 nsum = v3_add(v3_add(verts[a].n, verts[bq].n), verts[cq].n);
-                            if (v3_dot(face, nsum) < 0) { int tmp = bq; bq = cq; cq = tmp; }
+                            if (v3_dot(face, want) < 0) { int tmp = bq; bq = cq; cq = tmp; }
                             uint16_t *ix = &out[o].idx[out[o].idx_count];
                             ix[0] = (uint16_t)oidx[a * 8 + o]; ix[1] = (uint16_t)oidx[bq * 8 + o]; ix[2] = (uint16_t)oidx[cq * 8 + o];
                             out[o].idx_count += 3;
