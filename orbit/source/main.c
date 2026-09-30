@@ -8,6 +8,7 @@
 #include "render.h"
 #include "hud.h"
 #include "flare.h"
+#include "gimbal.h"
 
 static float pad_axis(int v) {
     float a = v / 156.0f;
@@ -154,6 +155,7 @@ int main(void) {
         /* the 3D pass turns blending off; text and sprites need it back */
         C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA,
                        GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA);
+        gimbal_draw(render_top_target(), &w, &p, &cam);
         hud_draw(bottom, &w, &p, &cam, fps, sensors_calibrating());
         C2D_Flush();
         C3D_FrameEnd(0);
