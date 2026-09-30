@@ -310,6 +310,9 @@ static float sky_color(const world *w, const player *p, const camera *c, u32 *ou
         v3 rel = v3_sub(c->pos, b->pos);
         v3 up = v3_norm(rel), sun = v3_norm(v3_sub(w->b[BODY_SUN].pos, c->pos));
         float e = v3_dot(up, sun);
+        /* the sun is huge in the sky: measure daylight from its upper limb, not its centre */
+        float sun_ar = w->b[BODY_SUN].radius / v3_len(v3_sub(w->b[BODY_SUN].pos, c->pos));
+        e += sun_ar;
         /* full blue until the sun is about 5 degrees up, dark about 6 degrees after it sets */
         float day = clamp01((e + 0.10f) / 0.18f);
         day = day * day * (3.0f - 2.0f * day);
