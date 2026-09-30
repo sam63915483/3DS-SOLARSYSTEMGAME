@@ -32,9 +32,10 @@ static void rod_hand(const player *p, const camera *c, const fishing *fish, v3 *
         f = v3_len(f) < 1e-3f ? v3_any_perp(u) : v3_norm(f);
         v3 right = v3_cross(f, u);   /* the figure's right (model -x) */
         /* the right hand: shoulder (0.40 out, 0.40 up) plus 0.74 of arm swung about the shoulder
-           by the same angle render.c draws it at (the arm hangs along -y, swing rotates it about x) */
+           by the same angle render.c draws it at (the arm hangs along -y, a positive swing about x
+           brings the hand forward) */
         float th = fishing_arm_swing(fish);
-        *butt = v3_add(v3_add(v3_add(p->pos, v3_scale(right, 0.40f)), v3_scale(u, 0.40f - 0.74f * cosf(th))), v3_scale(f, -0.74f * sinf(th)));
+        *butt = v3_add(v3_add(v3_add(p->pos, v3_scale(right, 0.40f)), v3_scale(u, 0.40f - 0.74f * cosf(th))), v3_scale(f, 0.74f * sinf(th)));
         *fwd = f; *up = u;
     }
 }
