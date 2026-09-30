@@ -33,7 +33,6 @@ static gpu_mesh rod_seg, bobber_top, bobber_bot, fish_mesh;
 #define LINE_VERTS (LINE_SEGS * 6)
 #define SPLASH_VERTS (8 * 6)
 static vertex *line_vbo, *splash_vbo;   /* rebuilt every frame */
-#define ROD_ARM_SWING (-1.3f)   /* right arm raised forward to hold the rod; flip the sign if it points back */
 static C3D_Tex detail[BODY_COUNT], water_tex, cloud_tex;
 static int has_detail[BODY_COUNT], has_water_tex, has_cloud_tex;
 static float sun_sx, sun_sy, sun_k;
@@ -249,7 +248,7 @@ static void draw_limb(const gpu_mesh *g, const C3D_Mtx *base, v3 pivot, float sw
     draw(g, &m, &mat_lit);
 }
 
-static void draw_player(const player *p, const camera *c, int fishing, float time) {
+static void draw_player(const player *p, const camera *c, const fishing *f, float time) {
     if (c->fp > 0.6f) return;   /* first person: no model in the way */
 
     /* the model uses the player's smoothed body basis: upright on the ground, easing onto the
@@ -275,7 +274,7 @@ static void draw_player(const player *p, const camera *c, int fishing, float tim
     draw_limb(&astro_leg, &base, v3_(-0.17f, -0.15f, 0), swing + leg_back, 0);
     draw_limb(&astro_leg, &base, v3_(0.17f, -0.15f, 0), -swing + leg_back, 0);
     /* model +x is the figure's left, so the right arm hangs at -0.40 */
-    if (fishing) draw_limb(&astro_arm, &base, v3_(-0.40f, 0.40f, 0), ROD_ARM_SWING, 0);   /* right hand holds the rod out front */
+    if (fishing_active(f)) draw_limb(&astro_arm, &base, v3_(-0.40f, 0.40f, 0), fishing_arm_swing(f), 0);   /* right hand holds the rod, turning with it */
     else draw_limb(&astro_arm, &base, v3_(-0.40f, 0.40f, 0), arm_swing, arm_splay);
     draw_limb(&astro_arm, &base, v3_(0.40f, 0.40f, 0), -arm_swing * (player_on_foot(p) ? 1 : -1), -arm_splay);
 
@@ -337,6 +336,19 @@ static void draw_fishing_solid(const fishing *f) {
         v3 up = f->fish_up, fwd = f->fish_fwd, right = v3_cross(up, fwd);
         C3D_Mtx m; mtx_basis(&m, right, up, fwd, f->fish_pos);
         Mtx_Scale(&m, f->fish_scale, f->fish_scale, f->fish_scale);
+        draw(&fish_mesh, &m, &mat_lit);
+    }
+}
+
+/* Ambient fish under the sea near the player: opaque, drawn before the water so it tints them. */
+static void draw_school(const school *s, const world *w) {
+    if (s->body < 0) return;
+    for (int i = 0; i < SCHOOL_N; i++) {
+        if (!s->f[i].alive) continue;
+        v3 pos, up, fwd;
+        school_fish_basis(s, w, i, &pos, &up, &fwd);
+        C3D_Mtx m; mtx_basis(&m, v3_cross(up, fwd), up, fwd, pos);
+        Mtx_Scale(&m, s->f[i].scale, s->f[i].scale, s->f[i].scale);
         draw(&fish_mesh, &m, &mat_lit);
     }
 }
@@ -416,7 +428,7 @@ static float sky_color(const world *w, const player *p, const camera *c, u32 *ou
     return k;
 }
 
-void render_scene(const world *w, const player *p, const camera *c, const fishing *f, float time) {
+void render_scene(const world *w, const player *p, const camera *c, const fishing *f, const school *s, float time) {
     u32 sky;
     float skyk = sky_color(w, p, c, &sky);
     C3D_RenderTargetClear(top, C3D_CLEAR_ALL, sky, 0);
@@ -478,8 +490,9 @@ void render_scene(const world *w, const player *p, const camera *c, const fishin
             }
         }
     }
-    draw_player(p, c, fishing_active(f), time);
+    draw_player(p, c, f, time);
     draw_fishing_solid(f);
+    draw_school(s, w);
 
     /* seas: translucent, textured ripples drifting, both sides visible, no depth writes */
     C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA);

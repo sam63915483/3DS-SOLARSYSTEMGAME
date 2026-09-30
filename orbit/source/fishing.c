@@ -26,7 +26,8 @@
 #define DEG ((float)M_PI / 180.0f)
 
 static const float STRIKE_WINDOW[3] = { 3.0f, 2.0f, 1.5f };
-static const float FISH_SCALE[3] = { 0.6f, 1.0f, 1.5f };
+static const float FISH_SCALE[3] = { 1.6f, 2.4f, 3.4f };   /* of the 0.5-long mesh: 0.8 / 1.2 / 1.7 long */
+#define ARM_REST_SWING (-1.3f)   /* radians the right arm is swung forward holding the rod at rest */
 static const float WEIGHT_LO[3] = { 1.0f, 3.0f, 9.0f }, WEIGHT_HI[3] = { 3.0f, 9.0f, 26.0f };   /* pounds */
 static const char *TIER_NAME[3] = { "COMMON", "UNCOMMON", "RARE" };
 
@@ -58,6 +59,16 @@ void fishing_rod_frame(const fishing *f, rod_frame *r) {
 
 v3 fishing_rod_point(const rod_frame *r, float s) {
     return v3_add(r->butt, v3_rotate(v3_scale(r->dir, ROD_LEN * s), r->bend_axis, r->bend_rad * s * s));
+}
+
+float fishing_arm_swing(const fishing *f) {
+    if (!fishing_active(f)) return ARM_REST_SWING;
+    /* the arm turns with the rod so the two stay rigid, within what a shoulder can do */
+    float e = ROD_REST_ELEV - f->rod_pose - f->rod_recoil + f->rod_haul;
+    float a = ARM_REST_SWING + (e - ROD_REST_ELEV) * DEG;
+    if (a > 1.0f) a = 1.0f;
+    if (a < -2.4f) a = -2.4f;
+    return a;
 }
 
 static v3 tip_of(const fishing *f) { rod_frame r; fishing_rod_frame(f, &r); return fishing_rod_point(&r, 1.0f); }
@@ -157,7 +168,7 @@ static void fish_on_float(fishing *f, const player *p, float vig, int running, f
     float half = 0.25f * f->fish_scale;
     f->fish_fwd = fwd;
     f->fish_up = v3_norm(v3_tangent(up, fwd));
-    f->fish_pos = v3_add(v3_sub(f->bobber, v3_scale(fwd, half)), v3_scale(up, 0.02f + 0.1f * half));
+    f->fish_pos = v3_add(v3_sub(f->bobber, v3_scale(fwd, half)), v3_scale(up, 0.05f + 0.3f * half));   /* head up out of the water */
     f->fish_visible = 1;
 }
 

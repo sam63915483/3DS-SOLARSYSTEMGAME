@@ -265,10 +265,12 @@ int main(void) {
     cin.turn = 0; cin.look_y = 1.0f;
     v3 start_view = c.view;
     int looked_back = 0;
-    for (int f = 0; f < 30; f++) { world_update(&w, DT); player_update(&p, &w, &in, DT); camera_update(&c, &w, &p, &cin, DT); }
+    /* the view still carries the downward pitch from the hop (landing keeps it now), so a full
+       second of pad-up is needed to be clearly looking up */
+    for (int f = 0; f < 60; f++) { world_update(&w, DT); player_update(&p, &w, &in, DT); camera_update(&c, &w, &p, &cin, DT); }
     CHECK(v3_dot(c.view, p.up) > 0.4f, "holding the pad up pitches the view up in flight");
     CHECK(fabsf(v3_dot(c.view, c.view_up)) < 1e-3f, "pitched view stays perpendicular to its up");
-    for (int f = 0; f < 160; f++) {
+    for (int f = 0; f < 130; f++) {
         world_update(&w, DT); player_update(&p, &w, &in, DT); camera_update(&c, &w, &p, &cin, DT);
         if (v3_dot(c.view, start_view) < -0.9f) looked_back = 1;
     }

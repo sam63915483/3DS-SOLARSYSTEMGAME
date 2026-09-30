@@ -3,6 +3,7 @@
 #include "fishing.h"
 #include "world.h"
 #include "mesh.h"
+#include "school.h"
 #include <string.h>
 
 #define DT (1.0f / 60.0f)
@@ -242,6 +243,26 @@ int main(void) {
         for (int i = 0; i < 180; i++) player_update(&pt, &w, &pin, DT);   /* 3 s of walking at the trunk */
         float gap = v3_len(v3_tangent(v3_sub(pt.pos, world_prop_base(&w, BODY_VERDANT, q)), q->dir));
         CHECK(gap > q->hit_r + 0.3f, "walking into a tree stops at its trunk");
+    }
+
+    /* ambient school: fish appear near the angler, stay under the surface and out of the bed */
+    {
+        school s; school_init(&s);
+        for (int i = 0; i < 600; i++) school_update(&s, &w, &p, DT);   /* 10 s */
+        int alive = 0, bad = 0;
+        for (int i = 0; i < SCHOOL_N; i++) {
+            if (!s.f[i].alive) continue;
+            alive++;
+            v3 dir = v3_norm(s.f[i].rel);
+            float r = v3_len(s.f[i].rel);
+            if (r > sea_r - 0.2f) bad++;                                       /* breaking the surface */
+            if (r < world_surface(&w, BODY_VERDANT, dir) + 0.3f) bad++;       /* in the seabed */
+            if (v3_len(v3_sub(v3_add(w.b[BODY_VERDANT].pos, s.f[i].rel), p.pos)) > 61.0f) bad++;
+            if (s.f[i].scale < 1.0f) bad++;
+        }
+        printf("     (%d school fish alive)\n", alive);
+        CHECK(alive >= 10, "most of the school is swimming after 10 s");
+        CHECK(bad == 0, "every school fish is under the surface, above the bed and near the angler");
     }
 
     /* fish mesh */

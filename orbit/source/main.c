@@ -11,6 +11,7 @@
 #include "gimbal.h"
 #include "fishing.h"
 #include "fishhud.h"
+#include "school.h"
 
 static float pad_axis(int v) {
     float a = v / 156.0f;
@@ -21,7 +22,7 @@ static float pad_axis(int v) {
 
 /* Where the rod is held: the right hand of the model in third person, the lower right of the
    view in first person, with the plane the rod swings in. */
-static void rod_hand(const player *p, const camera *c, v3 *butt, v3 *fwd, v3 *up) {
+static void rod_hand(const player *p, const camera *c, const fishing *fish, v3 *butt, v3 *fwd, v3 *up) {
     if (c->fp > 0.5f) {
         v3 right = v3_norm(v3_cross(c->view, c->view_up));
         *butt = v3_add(v3_add(v3_add(c->pos, v3_scale(right, 0.38f)), v3_scale(c->view_up, -0.32f)), v3_scale(c->view, 0.25f));
@@ -30,8 +31,10 @@ static void rod_hand(const player *p, const camera *c, v3 *butt, v3 *fwd, v3 *up
         v3 u = p->body_up, f = v3_tangent(p->body_fwd, u);
         f = v3_len(f) < 1e-3f ? v3_any_perp(u) : v3_norm(f);
         v3 right = v3_cross(f, u);   /* the figure's right (model -x) */
-        /* the raised right arm: shoulder (0.40 out, 0.40 up) plus 0.74 of arm swung forward */
-        *butt = v3_add(v3_add(v3_add(p->pos, v3_scale(right, 0.40f)), v3_scale(u, 0.20f)), v3_scale(f, 0.70f));
+        /* the right hand: shoulder (0.40 out, 0.40 up) plus 0.74 of arm swung about the shoulder
+           by the same angle render.c draws it at (the arm hangs along -y, swing rotates it about x) */
+        float th = fishing_arm_swing(fish);
+        *butt = v3_add(v3_add(v3_add(p->pos, v3_scale(right, 0.40f)), v3_scale(u, 0.40f - 0.74f * cosf(th))), v3_scale(f, -0.74f * sinf(th)));
         *fwd = f; *up = u;
     }
 }
@@ -132,6 +135,7 @@ int main(void) {
     render_init(&w);
     hud_init();
     fishing fish; fishing_init(&fish);
+    school sch; school_init(&sch);
 
     u64 last = osGetTime();
     float fps = 60;
@@ -194,12 +198,13 @@ int main(void) {
             fin.r_down = (kHeld & KEY_R) != 0;
             fin.r_pressed = (kDown & KEY_R) != 0;
             fin.cast_dir = cam.view;
-            rod_hand(&p, &cam, &fin.hand, &fin.hand_fwd, &fin.hand_up);
+            rod_hand(&p, &cam, &fish, &fin.hand, &fin.hand_fwd, &fin.hand_up);
             fishing_update(&fish, &w, &p, &fin, dt);
         }
+        school_update(&sch, &w, &p, dt);
 
         C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
-        render_scene(&w, &p, &cam, &fish, w.t);
+        render_scene(&w, &p, &cam, &fish, &sch, w.t);
         C3D_LightEnvBind(NULL);
         C2D_Prepare();
         {

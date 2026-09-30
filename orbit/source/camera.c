@@ -74,10 +74,16 @@ void camera_update(camera *c, const world *w, const player *p, const camera_inpu
 
     if (player_locked(p, w)) {
         if (!c->was_grounded) {
-            /* just landed or dropped back into the atmosphere: keep looking the way we were flying */
+            /* just landed or dropped back into the atmosphere: keep looking the way we were
+               flying, pitch included, so nothing moves but the roll levelling out */
             v3 h = v3_tangent(c->view, c->up);
             if (v3_len(h) > 1e-3f) c->fwd = v3_norm(h);
-            c->ground_pitch = 0;
+            float s = v3_dot(c->view, c->up);
+            if (s > 1) s = 1;
+            if (s < -1) s = -1;
+            c->ground_pitch = asinf(s);
+            if (c->ground_pitch > GROUND_PITCH_MAX) c->ground_pitch = GROUND_PITCH_MAX;
+            if (c->ground_pitch < -GROUND_PITCH_MAX) c->ground_pitch = -GROUND_PITCH_MAX;
         }
         /* circle pad left/right (and the gyro) orbit the look around the standing player */
         float a = (-in->look_x * LOOK_YAW + in->gyro_yaw) * dt;
@@ -97,13 +103,17 @@ void camera_update(camera *c, const world *w, const player *p, const camera_inpu
         v3 tv = v3_add(v3_scale(c->fwd, cp), v3_scale(c->up, sp));
         v3 tu = v3_sub(v3_scale(c->up, cp), v3_scale(c->fwd, sp));
 
-        /* settle the free orientation onto the ground basis */
-        float k = ease(8.0f, dt);
+        /* settle the free orientation onto the ground basis: briskly on foot, gently in the air
+           so re-entering the atmosphere rolls level rather than snapping */
+        float k = ease(player_on_foot(p) ? 8.0f : 2.5f, dt);
         c->view = v3_lerp(c->view, tv, k);
         c->view_up = v3_lerp(c->view_up, tu, k);
         orthonormalize(c);
     } else {
-        if (c->was_grounded) c->level_t = LEVEL_TIME;   /* just left the ground or the atmosphere */
+        /* just took off from an airless moon: ease the look level so the body stays upright
+           through the jump. Leaving an atmosphere needs nothing, the view is already upright
+           and pulling it level would be the snap the user felt. */
+        if (c->was_grounded && !w->b[p->dom].atmo) c->level_t = LEVEL_TIME;
         if (c->level_t > 0) {
             /* ease the look back to level so the body can stay upright through the jump;
                the pull fades out as the pad takes over */
