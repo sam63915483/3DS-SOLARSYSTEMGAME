@@ -68,6 +68,7 @@ void mesh_octa(mesh *m, v3 c, v3 r, v3 u, v3 f, float rx, float ry, float rz, ui
 /* Houses and their aliens, in the house's local frame (x right, y up, z forward, origin at the
    pad). style 0: the clay dome hut and the tall three-eyed VESK; 1: the teal lodge and the
    round one-eyed MOMO. The glow mesh holds the parts drawn emissive (windows, eyes). */
+#define VILLAGE_MESH_CAP 4000   /* vertices each village mesh has room for; tests check they fit */
 mesh mesh_house(int style);
 mesh mesh_house_glow(int style);
 mesh mesh_alien(int style);

@@ -67,6 +67,14 @@ int main(void) {
         CHECK(village_talk(&w, &p) == NULL, "quiet again once you leave");
     }
     /* the meshes exist and differ */
+    /* every village mesh fits its buffer: an overflow here corrupted the heap and hung the boot */
+    for (int k = 0; k < HOUSE_N; k++) {
+        mesh ms[4] = { mesh_house(k), mesh_house_glow(k), mesh_alien(k), mesh_alien_glow(k) };
+        for (int q = 0; q < 4; q++) {
+            CHECK(ms[q].count > 0 && ms[q].count <= VILLAGE_MESH_CAP, "a village mesh fits its buffer");
+            mesh_free(&ms[q]);
+        }
+    }
     mesh h0 = mesh_house(0), h1 = mesh_house(1), a0 = mesh_alien(0), a1 = mesh_alien(1);
     CHECK(h0.count > 200 && h1.count > 200 && h0.count != h1.count, "two different houses");
     CHECK(a0.count > 100 && a1.count > 100 && a0.count != a1.count, "two different aliens");

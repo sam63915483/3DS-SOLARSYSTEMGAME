@@ -567,7 +567,7 @@ static void emit_quad2(mesh *m, v3 a, v3 b, v3 c, v3 d, uint32_t col) {
 
 mesh mesh_house(int style) {
     mesh m = { 0, 0, 0, 0 };
-    m.v = calloc(4000, sizeof(vertex));
+    m.v = calloc(VILLAGE_MESH_CAP, sizeof(vertex));
     if (style == 0) {
         /* the dome: a hemisphere of quads, both faces, a gap for the door in the lower rings,
            a darker band at the base and a round floor */
@@ -629,7 +629,7 @@ mesh mesh_house(int style) {
 
 mesh mesh_house_glow(int style) {
     mesh m = { 0, 0, 0, 0 };
-    m.v = calloc(400, sizeof(vertex));
+    m.v = calloc(VILLAGE_MESH_CAP, sizeof(vertex));
     if (style == 0) {
         /* a lantern hanging from the top of the dome */
         emit_sphere(&m, v3_(0, 3.4f, 0), 0.22f, 0xFFD890FF);
@@ -645,7 +645,7 @@ mesh mesh_house_glow(int style) {
 
 mesh mesh_alien(int style) {
     mesh m = { 0, 0, 0, 0 };
-    m.v = calloc(1200, sizeof(vertex));
+    m.v = calloc(VILLAGE_MESH_CAP, sizeof(vertex));
     if (style == 0) {
         /* VESK: tall and thin, a long green body, a big pale head, three eyes, dangling arms */
         emit_prism(&m, v3_(0, 0, 0), 0.30f, 0.0f, 1.6f, 0x6CC85AFF);
@@ -669,7 +669,7 @@ mesh mesh_alien(int style) {
 
 mesh mesh_alien_glow(int style) {
     mesh m = { 0, 0, 0, 0 };
-    m.v = calloc(600, sizeof(vertex));
+    m.v = calloc(VILLAGE_MESH_CAP, sizeof(vertex));
     if (style == 0) {
         /* three dark eyes with bright pupils across the front of the head */
         for (int k = -1; k <= 1; k++) {
