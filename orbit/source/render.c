@@ -293,12 +293,21 @@ static float clamp01(float x) { return x < 0 ? 0 : (x > 1 ? 1 : x); }
 /* Sky colour seen from the camera: the dominant body's atmosphere, fading with altitude and
    with the sun below the horizon, warm at the terminator. Returns the strength 0..1. */
 static float sky_color(const world *w, const player *p, const camera *c, u32 *out) {
-    const body *b = &w->b[p->dom];
+    (void)p;
+    /* the atmosphere we are deepest inside decides the sky, whatever body's gravity wins */
+    const body *b = NULL;
+    float dens = 0;
+    for (int i = 0; i < BODY_COUNT; i++) {
+        const body *cand = &w->b[i];
+        if (!cand->atmo) continue;
+        float alt = v3_len(v3_sub(c->pos, cand->pos)) - cand->radius;
+        /* stays blue well up into the atmosphere, then thins out over the top of it */
+        float d = sqrtf(clamp01(1.0f - alt / (cand->atmo_h * 1.4f)));
+        if (d > dens) { dens = d; b = cand; }
+    }
     float r = 2, g = 2, bl = 10, k = 0;
-    if (b->atmo) {
+    if (b) {
         v3 rel = v3_sub(c->pos, b->pos);
-        float alt = v3_len(rel) - b->radius;
-        float dens = clamp01(1.0f - alt / b->atmo_h);
         v3 up = v3_norm(rel), sun = v3_norm(v3_sub(w->b[BODY_SUN].pos, c->pos));
         float e = v3_dot(up, sun);
         float day = clamp01((e + 0.12f) / 0.40f);
