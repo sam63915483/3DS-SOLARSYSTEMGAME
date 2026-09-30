@@ -26,10 +26,7 @@ static C3D_Light light;
 static C3D_LightLut lutPhong;
 
 static gpu_mesh bodies[BODY_COUNT], props[BODY_COUNT][8], grass[BODY_COUNT][GRASS_CELLS];
-#define SHELLS 4   /* concentric atmosphere layers, each a soft band, stacking into a gradient */
-static const float shell_r[SHELLS] = { 0.35f, 0.75f, 1.20f, 1.70f };
-static const u32 shell_a[SHELLS] = { 0xC0, 0x70, 0x40, 0x24 };
-static gpu_mesh water[BODY_COUNT], shells[BODY_COUNT][SHELLS], clouds[BODY_COUNT];
+static gpu_mesh water[BODY_COUNT], shell_in[BODY_COUNT], shell_out[BODY_COUNT], clouds[BODY_COUNT];
 static gpu_mesh astro_body, astro_arm, astro_leg, flame_outer, flame_inner, stars;
 static C3D_Tex detail[BODY_COUNT], water_tex, cloud_tex;
 static int has_detail[BODY_COUNT], has_water_tex, has_cloud_tex, aParams;
@@ -105,14 +102,13 @@ void render_init(const world *w) {
         for (int g = 0; g < GRASS_CELLS; g++) grass[i][g] = upload(mesh_grass(w, i, g));
         has_detail[i] = !b->emissive && texture_make_detail(&detail[i], texture_kind_for(b->terrain), b->seed);
         gpu_mesh none = { 0, 0, 0, 0 };
-        clouds[i] = none;
-        for (int s = 0; s < SHELLS; s++) shells[i][s] = none;
+        shell_in[i] = shell_out[i] = clouds[i] = none;
         if (b->atmo) {
-            /* several faint layers whose rims stack into one soft gradient */
-            for (int s = 0; s < SHELLS; s++)
-                shells[i][s] = upload(mesh_sphere(b->radius + b->atmo_h * shell_r[s], 24, 36, (b->atmo & 0xFFFFFF00u) | shell_a[s]));
+            /* two soft layers: a dense low one and a faint high one */
+            shell_in[i] = upload(mesh_sphere(b->radius + b->atmo_h * 0.35f, 24, 36, (b->atmo & 0xFFFFFF00u) | 0xC0));
+            shell_out[i] = upload(mesh_sphere(b->radius + b->atmo_h * 1.0f, 24, 36, (b->atmo & 0xFFFFFF00u) | 0x70));
             if (b->terrain != TERRAIN_EMBER)
-                clouds[i] = upload(mesh_sphere_uv(b->radius + b->atmo_h * 0.68f, 28, 42, 0xFFFFFFD8u, 2.0f));
+                clouds[i] = upload(mesh_sphere_uv(b->radius + b->atmo_h * 0.45f, 28, 42, 0xFFFFFFD8u, 2.0f));
         }
     }
     has_water_tex = texture_make_detail(&water_tex, DETAIL_WATER, 77u);
@@ -124,7 +120,7 @@ void render_init(const world *w) {
     astro_leg = upload(mesh_astronaut(ASTRO_LEG));
     flame_outer = upload(mesh_cone(8, 0xFF7A1AFF));   /* unit cones, scaled per jet */
     flame_inner = upload(mesh_cone(8, 0xFFE878FF));
-    stars = upload(mesh_stars(420, STAR_RADIUS, 18.0f, 20260929u));
+    stars = upload(mesh_stars(360, STAR_RADIUS, 14.0f, 20260929u));
 }
 
 /* Combiner setup. mode 0: vertex colour * lighting; 1: texture * vertex colour * lighting;
@@ -301,17 +297,7 @@ static float sky_color(const world *w, const player *p, const camera *c, u32 *ou
         float dens = clamp01(1.0f - alt / b->atmo_h);
         v3 up = v3_norm(rel), sun = v3_norm(v3_sub(w->b[BODY_SUN].pos, c->pos));
         float e = v3_dot(up, sun);
-        /* the sun is huge in these skies (50 degrees across from Ember): measure from its upper
-           limb, and against the visible horizon, which dips well below level on small planets */
-        e += w->b[BODY_SUN].radius / v3_len(v3_sub(w->b[BODY_SUN].pos, c->pos));
-        {
-            float ratio = b->radius / v3_len(rel);
-            if (ratio > 1) ratio = 1;
-            e += sinf(acosf(ratio));
-        }
-        /* full until the sun nears that horizon, dark a few degrees after it is gone */
-        float day = clamp01((e + 0.10f) / 0.18f);
-        day = day * day * (3.0f - 2.0f * day);
+        float day = clamp01((e + 0.12f) / 0.40f);
         float strength = (b->atmo & 0xFF) / 255.0f;
         k = dens * day * strength;
         float ar = (b->atmo >> 24) & 0xFF, ag = (b->atmo >> 16) & 0xFF, ab = (b->atmo >> 8) & 0xFF;
@@ -345,8 +331,7 @@ void render_scene(const world *w, const player *p, const camera *c, float time) 
 
     C3D_Mtx model;
     /* stars follow the camera so they never get closer; they fade as the sky brightens */
-    /* stars stay full until the sky is properly bright, then fade out */
-    float star_k = 1.0f - clamp01((skyk - 0.35f) / 0.45f);
+    float star_k = 1.0f - skyk * 1.8f;
     if (star_k > 0.02f) {
         C3D_Material mat_stars = mat_glow;
         mat_stars.emission[0] = mat_stars.emission[1] = mat_stars.emission[2] = star_k > 1 ? 1 : star_k;
@@ -405,26 +390,20 @@ void render_scene(const world *w, const player *p, const camera *c, float time) 
         draw_ex(&clouds[i], &model, &mat_lit, &cloud_tex, uMV);
     }
 
-    /* atmosphere shells: soft bands with their own shader, outside faces only, no lighting.
-       Each layer fades out as the camera passes through it. */
-    C3D_CullFace(GPU_CULL_BACK_CCW);
+    /* atmosphere shells: rim glow with their own shader, no lighting. Each layer fades out
+       as the camera passes through it so it never reads as a hard bubble. */
     C3D_BindProgram(&program_atmo);
     C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, aProj, &proj);
     C3D_LightEnvBind(NULL);
     for (int i = 0; i < BODY_COUNT; i++) {
         const body *b = &w->b[i];
-        if (!shells[i][0].count) continue;
+        if (!shell_in[i].count) continue;
         v3 sd = v3_norm(v3_sub(w->b[BODY_SUN].pos, b->pos));
         C3D_FVec sv = Mtx_MultiplyFVec4(&view, FVec4_New(sd.x, sd.y, sd.z, 0.0f));
         C3D_FVUnifSet(GPU_VERTEX_SHADER, aSun, sv.x, sv.y, sv.z, 0.0f);
         mtx_translate(&model, b->pos);
-        float cam_r = v3_len(v3_sub(c->pos, b->pos));
-        for (int s = 0; s < SHELLS; s++) {
-            float layer_r = b->radius + b->atmo_h * shell_r[s];
-            float fade = clamp01(fabsf(cam_r - layer_r) / (b->atmo_h * 0.4f));
-            C3D_FVUnifSet(GPU_VERTEX_SHADER, aParams, fade, 0, 0, 0);
-            draw_ex(&shells[i][s], &model, NULL, NULL, aMV);
-        }
+        draw_ex(&shell_in[i], &model, NULL, NULL, aMV);
+    }; 108,109c            shell_in[i] = upload(mesh_sphere(b->radius + b->atmo_h * 0.7f, 24, 36, (b->atmo & 0xFFFFFF00u) | 0xE0));; 105s|shell_in[i] = shell_out[i] = clouds[i] = none;|shell_in[i] = clouds[i] = none;|; 87d; 32s|, aParams;|;|; 29s|shell_in[BODY_COUNT], shell_out[BODY_COUNT], clouds[BODY_COUNT]|shell_in[BODY_COUNT], clouds[BODY_COUNT]|
     }
     C3D_LightEnvBind(&lightEnv);
     C3D_BindProgram(&program);
@@ -475,8 +454,7 @@ C3D_RenderTarget *render_top_target(void) { return top; }
 
 void render_fini(void) {
     for (int i = 0; i < BODY_COUNT; i++) {
-        gpu_free(&bodies[i]); gpu_free(&water[i]); gpu_free(&clouds[i]);
-        for (int s = 0; s < SHELLS; s++) gpu_free(&shells[i][s]);
+        gpu_free(&bodies[i]); gpu_free(&water[i]); gpu_free(&shell_in[i]); gpu_free(&clouds[i]);
         for (int o = 0; o < 8; o++) gpu_free(&props[i][o]);
         for (int g = 0; g < GRASS_CELLS; g++) gpu_free(&grass[i][g]);
         if (has_detail[i]) C3D_TexDelete(&detail[i]);

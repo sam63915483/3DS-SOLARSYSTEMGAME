@@ -1,10 +1,10 @@
 ; Atmosphere shell shader: rim glow. Alpha = colour alpha * (1 - |n.v|)^2 * daylight,
 ; where n is the view-space normal, v the direction to the camera, daylight = max(0, n.sun).
 
-.fvec projection[4], modelView[4], sundir, params   ; params.x = alpha scale
+.fvec projection[4], modelView[4], sundir
 
 .constf myconst(0.0, 1.0, -1.0, 0.5)
-.constf inv255(0.00392156862745, 3.0, 0.15, 4.0)
+.constf inv255(0.00392156862745, 3.0, 0.15, 0.0)
 .alias  zeros myconst.xxxx
 .alias  ones  myconst.yyyy
 
@@ -48,13 +48,11 @@
 	rsq r6.x, r6.x
 	mul r5.xyz, r5.xyz, r6.x
 
-	; f = 4 d (1 - d) with d = |n.v|: zero at the centre and at the silhouette, so the
-	; layered shells overlap into one soft glow with no hard edges
+	; f = (1 - |n.v|)^2
 	dp3 r7.x, r14, r5
 	max r7.x, r7.x, -r7.x
 	add r7.y, ones, -r7.x
-	mul r7.y, r7.y, r7.x
-	mul r7.y, inv255.wwww, r7.y
+	mul r7.y, r7.y, r7.y
 
 	; daylight = clamp((n.sun + 0.15) * 3, 0, 1)
 	dp3 r8.x, sundir, r14
@@ -66,7 +64,6 @@
 	mul r9, inv255.xxxx, incol
 	mul r9.w, r9.w, r7.y
 	mul r9.w, r9.w, r8.x
-	mul r9.w, params.x, r9.w
 	mov outclr, r9
 	end
 .end

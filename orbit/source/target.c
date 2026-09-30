@@ -142,37 +142,5 @@ void target_draw(C3D_RenderTarget *top, const target_state *t, const world *w, c
             font_draw(b->name, cx - font_width(b->name, 1) / 2 - ex * 20, cy - ey * 20 - 4, 1, orange);
         }
     }
-
-    /* heading and retro markers: where you are moving relative to the target, and the
-       opposite. Face the retro marker and boost to stop; face the ring and boost until the
-       heading marker sits on it for a straight approach. */
-    float speed = v3_len(v_rel);
-    if (speed > 0.8f) {
-        const u32 green = C2D_Color32(120, 255, 140, 230), red = C2D_Color32(255, 110, 100, 230);
-        v3 vd = v3_scale(v_rel, 1.0f / speed);
-        for (int m = 0; m < 2; m++) {
-            v3 d = m == 0 ? vd : v3_scale(vd, -1.0f);
-            u32 colm = m == 0 ? green : red;
-            float mx, my;
-            if (render_project(v3_add(c->pos, v3_scale(d, 200.0f)), &mx, &my) &&
-                mx > 4 && mx < SCREEN_W - 4 && my > 4 && my < SCREEN_H - 4) {
-                ring(mx, my, 7, 1.5f, colm);
-                if (m == 0) C2D_DrawCircleSolid(mx, my, 0, 2, colm);
-                else { line(mx - 4, my - 4, mx + 4, my + 4, 1.5f, colm); line(mx - 4, my + 4, mx + 4, my - 4, 1.5f, colm); }
-                font_draw(m == 0 ? "HEADING" : "RETRO", mx - font_width(m == 0 ? "HEADING" : "RETRO", 1) / 2, my + 10, 1, colm);
-            } else {
-                /* off screen: small arrow at the edge */
-                float ex = v3_dot(d, cam_right), ey = -v3_dot(d, c->view_up);
-                float l = sqrtf(ex * ex + ey * ey);
-                if (l > 1e-3f) {
-                    ex /= l; ey /= l;
-                    float cx = SCREEN_W / 2 + ex * 150, cy = SCREEN_H / 2 + ey * 80;
-                    arrow(cx - ex * 12, cy - ey * 12, cx, cy, 1.5f, colm);
-                }
-            }
-        }
-        const char *hint = closing > 0 ? "FACE RETRO + A TO SLOW    KEEP HEADING ON THE RING" : "FACE RING + A UNTIL HEADING SITS ON IT";
-        font_draw(hint, SCREEN_W / 2 - font_width(hint, 1) / 2, SCREEN_H - 12, 1, dimc);
-    }
     C2D_Flush();
 }
