@@ -160,8 +160,11 @@ void player_update(player *p, const world *w, const player_input *in, float dt) 
     if (!jumped) p->grounded = touching;
     if (touching) p->swimming = 0;
 
-    /* facing follows the input, stays tangent */
-    if (mlen > 0.1f) p->facing = v3_lerp(p->facing, v3_norm(move), ease(10.0f, dt));
+    /* facing follows the walk, or the requested direction when standing still, stays tangent */
+    {
+        v3 face = mlen > 0.1f ? move : in->face;
+        if (v3_len(face) > 0.1f) p->facing = v3_lerp(p->facing, v3_norm(face), ease(10.0f, dt));
+    }
     p->facing = v3_tangent(p->facing, p->up);
     p->facing = v3_len(p->facing) < 1e-3f ? fwd : v3_norm(p->facing);
 

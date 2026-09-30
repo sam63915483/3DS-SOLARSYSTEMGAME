@@ -34,6 +34,7 @@ typedef struct {
     int thrust_down;   /* B held in the air: thrust against view_up */
     int brake;         /* Y held in the air: bleed relative velocity */
     float roll;        /* -1..1 from L/R in the air, only drives the roll jets */
+    v3 face;           /* on foot: turn the model to face this world direction (zero: face the walk) */
     v3 cam_forward;    /* camera heading, any length; walking is relative to it */
     v3 view_forward;   /* unit vector the camera looks along, including pitch */
     v3 view_up;        /* unit vector up from the player as seen by the camera; up/down thrust follow it */

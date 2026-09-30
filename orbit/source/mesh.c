@@ -503,6 +503,17 @@ mesh mesh_box(float sx, float sy, float sz, uint32_t col) {
     return m;
 }
 
+mesh mesh_fish(void) {
+    mesh m = { 0, 0, 0, 0 };
+    m.v = calloc(24 + 6, sizeof(vertex));
+    emit_octa(&m, v3_(0, 0, 0.02f), AX, AY, AZ, 0.07f, 0.10f, 0.26f, 0x6E9A6EFF);   /* body */
+    /* tail fin: one vertical triangle, both faces */
+    v3 root = v3_(0, 0, -0.22f), tt = v3_(0, 0.12f, -0.40f), tb = v3_(0, -0.12f, -0.40f);
+    emit_tri(&m, root, tt, tb, v3_(0.2f, 0, -0.3f), 0x5A8058FF);
+    emit_tri(&m, root, tb, tt, v3_(-0.2f, 0, -0.3f), 0x5A8058FF);
+    return m;
+}
+
 static uint32_t rnd(uint32_t *s) { *s = *s * 1664525u + 1013904223u; return *s; }
 static float frand(uint32_t *s) { return (rnd(s) >> 8) / 16777216.0f; }
 

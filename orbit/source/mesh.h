@@ -44,6 +44,8 @@ mesh mesh_cone(int segs, uint32_t col);
    along -y and are meant to be drawn at the shoulder / hip. */
 typedef enum { ASTRO_BODY, ASTRO_ARM, ASTRO_LEG } astro_part;
 mesh mesh_astronaut(astro_part part);
+/* A small fish in model space: +z is the head, +y up, about 0.5 long, origin mid-body. */
+mesh mesh_fish(void);
 /* n small triangles scattered on a sphere of the given radius. */
 mesh mesh_stars(int n, float radius, float size, uint32_t seed);
 void mesh_free(mesh *m);
