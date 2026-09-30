@@ -178,13 +178,12 @@ are textured with generated 64x64 tiling detail textures with mipmaps (`texture.
 speckle, cracked rock, sparkling snow, drifting ripples. Each planet with an atmosphere has a
 sky colour (blue by day, warm at the terminator, black at night and above the atmosphere,
 stars hidden in daylight) and a rim-lit shell drawn with a second vertex shader
-(`atmosphere.v.pica`), two layers that fade as the camera passes through them, so planets glow
-at the limb from space and haze at the horizon. Verdant and Frost have a drifting cloud layer
+(`atmosphere.v.pica`): four faint outside-only layers whose alpha is 4d(1-d) in the view angle, so
+each is a soft band with no edge and together they stack into one gradient; each fades as the
+camera passes through it. Verdant and Frost have a drifting cloud layer
 (alpha texture). Stars fade with sky brightness. A citro2d lens flare (`flare.c`) draws over
-the 3D frame when the sun is in view and not behind a planet. In flight, `target.c` puts
-brackets on the body under the crosshair; D-pad up locks it and shows a ring, name, distance,
-closing or receding speed with a gauge, and an arrow for your sideways drift relative to it,
-or an edge arrow when it is off screen. Planet meshes are
+the 3D frame when the sun is in view and not behind a planet. `target.c` is an Outer Wilds style lock-on (brackets, ring, distance, closing speed, heading
+and retro markers) that is built but not wired into `main.c` for now. Planet meshes are
 indexed. The astronaut is an articulated model (`mesh_astronaut`) with a walk cycle and a
 two-tank jetpack; flames are two-tone cones, and the air brake fires one along the direction
 of travel.
