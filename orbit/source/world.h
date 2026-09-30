@@ -32,23 +32,23 @@ typedef struct {
 
 typedef struct { int trees, rocks, shards; uint32_t rock_a, rock_b; float rock_scale; } prop_plan;
 
-/* A cave on a moon: a crater pit whose floor runs into a sloping tunnel mouth, a corkscrew
-   tunnel with a flat floor winding down, and a hollow zero-g core cavern with a glowing orb.
-   Points are relative to the body's centre. The tunnel axis is a spline through `path`,
-   sampled densely into `samp` for both the mesh and the collision. */
-#define CAVE_PATH_MAX 40
-#define CAVE_SAMP_MAX 200
+/* A moon's cave network, carved out of its rock: capsule tunnels, blob caverns and the
+   hollow zero-g core. The moon's whole surface, caves included, is one density field
+   (moon.c) meshed as one surface, and the player collides with that same field. */
+#define CAVE_SEG_MAX 180
+#define CAVE_BLOB_MAX 28
+#define CAVE_MOUTH_MAX 4
+typedef struct { v3 a, b; float r; } cave_seg;
+typedef struct { v3 c; float r; } cave_blob;
 typedef struct {
     int enabled;
-    v3 entrance;         /* unit direction of the pit centre */
-    float pit_ang, pit_depth;   /* bowl in the terrain: angular radius, depth */
-    float tube_r;        /* tunnel radius */
-    float floor_k;       /* the flat floor sits this fraction of tube_r below the axis */
-    v3 path[CAVE_PATH_MAX]; int npath;   /* spline control points: the mouth first */
-    v3 samp[CAVE_SAMP_MAX]; int nsamp;   /* the axis sampled every ~1.2 units */
-    float core_r;        /* cavern radius; gravity is zero inside */
-    float under_r;       /* radius of the dark shell under the terrain */
-} cave;
+    cave_seg seg[CAVE_SEG_MAX]; int nseg;
+    cave_blob blob[CAVE_BLOB_MAX]; int nblob;
+    v3 mouth[CAVE_MOUTH_MAX]; int nmouth;   /* unit directions of the tunnel mouths */
+    float core_r;        /* the core cavern; gravity is zero inside */
+    float cell;          /* voxel size the surface is meshed at */
+} cavenet;
+
 
 typedef struct {
     const char *name;
@@ -71,7 +71,7 @@ typedef struct {
     float atmo_h;        /* atmosphere thickness above the surface */
     float *grid;         /* (rings + 1) * segs heights, filled by world_init */
     prop *props; int nprops;   /* placed by world_init */
-    cave cave;                 /* moons only */
+    cavenet caves;             /* moons only: the carved cave network */
     v3 pos, prev, vel;   /* world position now, last frame, and velocity */
 } body;
 
@@ -108,7 +108,5 @@ uint32_t world_color(const world *w, int i, v3 dir, float raw_h);
 prop_plan world_prop_plan(terrain_kind t);
 /* World position of a prop's base (a little below the surface so it never floats). */
 v3 world_prop_base(const world *w, int i, const prop *q);
-/* True when the terrain at dir lies inside body i's tunnel mouth: no mesh, nothing to stand on. */
-int world_in_hole(const world *w, int i, v3 dir);
 
 #endif

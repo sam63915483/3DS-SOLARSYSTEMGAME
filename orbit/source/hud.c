@@ -10,6 +10,14 @@
 #define GYRO_X (BTN_X - 6 - GYRO_W)
 
 void hud_init(void) { font_init(); }
+
+void hud_splash(C3D_RenderTarget *bottom, const char *msg) {
+    C2D_TargetClear(bottom, C2D_Color32(0x10, 0x12, 0x1A, 0xFF));
+    C2D_SceneBegin(bottom);
+    font_draw("ORBIT", 8, 7, 2, C2D_Color32(0xFF, 0xC0, 0x40, 0xFF));
+    font_draw(msg, (320 - font_width(msg, 1.5f)) / 2, 112, 1.5f, C2D_Color32(0x90, 0x98, 0xA8, 0xFF));
+    C2D_Flush();
+}
 void hud_fini(void) { font_fini(); }
 
 int hud_view_button_hit(int x, int y) {

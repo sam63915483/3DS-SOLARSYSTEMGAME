@@ -131,11 +131,16 @@ int main(void) {
     C2D_Prepare();
     C3D_RenderTarget *bottom = C2D_CreateScreenTarget(GFX_BOTTOM, GFX_LEFT);
 
+    hud_init();
+    /* carving and meshing the moons takes a few seconds: say so instead of showing black */
+    C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
+    hud_splash(bottom, "BUILDING THE WORLD...");
+    C3D_FrameEnd(0);
+
     world w; world_init(&w);
     player p; player_spawn(&p, &w, BODY_START);
     camera cam; camera_init(&cam, &p);
     render_init(&w);
-    hud_init();
     fishing fish; fishing_init(&fish);
     school sch; school_init(&sch);
     fireflies ff; fireflies_init(&ff);

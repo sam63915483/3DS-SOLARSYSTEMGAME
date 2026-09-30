@@ -8,6 +8,8 @@
 #include "fishing.h"
 
 void hud_init(void);
+/* A one-line message on an otherwise empty bottom screen (used while the world is built). */
+void hud_splash(C3D_RenderTarget *bottom, const char *msg);
 /* gyro_settling: the gyro was just switched on and is averaging its zero point; ask to hold still */
 void hud_draw(C3D_RenderTarget *bottom, const world *w, const player *p, const camera *c, const fishing *f, float fps, int gyro_settling);
 /* True when a touch at x,y (bottom-screen pixels) lands on the VIEW button. */

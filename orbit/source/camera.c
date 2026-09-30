@@ -1,5 +1,5 @@
 #include "camera.h"
-#include "cave.h"
+#include "moon.h"
 
 #define CAM_BACK     7.0f
 #define CAM_UP       2.2f
@@ -25,19 +25,25 @@ static void place(camera *c, const world *w, const player *p, float dt) {
     v3 tp_pos = v3_add(v3_add(p->pos, v3_scale(c->view_up, CAM_UP)), v3_scale(c->view, -CAM_BACK));
     v3 tp_target = v3_add(p->pos, v3_scale(c->view_up, 1.0f));
     const body *b = &w->b[p->dom];
-    if (p->in_cave) {
-        /* walk the camera back from the player and stop before it would leave the cave */
-        v3 best = tp_target;
-        for (int k = 1; k <= 16; k++) {
-            v3 q = v3_lerp(tp_target, tp_pos, k / 16.0f), n; float pen;
-            if (!cave_inside(&b->cave, v3_sub(q, b->pos), 0.4f, &n, &pen) || pen > 0) break;
-            best = q;
+    if (b->caves.enabled) {
+        /* a carved moon: trace back from the player through the field and stop short of the
+           rock. The allowed distance closes in at once but opens back out gently, so the camera
+           never clips and never jumps. */
+        float full = v3_len(v3_sub(tp_pos, tp_target)), allowed = 0;
+        for (int k = 1; k <= 24; k++) {
+            v3 q = v3_lerp(tp_target, tp_pos, k / 24.0f);
+            if (moon_field(w, p->dom, v3_sub(q, b->pos)) > -0.5f) break;
+            allowed = full * k / 24.0f;
         }
-        tp_pos = best;
+        float frac = full > 1e-3f ? allowed / full : 1.0f;
+        if (frac < c->cam_back) c->cam_back = frac;
+        else c->cam_back += (frac - c->cam_back) * ease(3.0f, dt);
+        tp_pos = v3_lerp(tp_target, tp_pos, c->cam_back);
     } else {
+        c->cam_back += (1.0f - c->cam_back) * ease(3.0f, dt);
         v3 d = v3_sub(tp_pos, b->pos);
         float dist = v3_len(d);
-        if (dist < b->radius + b->amp + 1.0f && !world_in_hole(w, p->dom, v3_norm(d))) {   /* keep it above the terrain */
+        if (dist < b->radius + b->amp + 1.0f) {   /* keep it above the terrain */
             float min = world_surface(w, p->dom, v3_norm(d)) + 0.6f;
             if (dist < min) tp_pos = v3_add(b->pos, v3_scale(d, min / dist));
         }
@@ -74,6 +80,7 @@ void camera_init(camera *c, const player *p) {
     c->ground_pitch = 0;
     c->first_person = 0;
     c->fp = 0;
+    c->cam_back = 1;
     c->gyro = 0;
     c->was_grounded = player_on_foot(p);
     c->level_t = 0;

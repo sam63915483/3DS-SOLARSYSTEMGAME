@@ -3,6 +3,7 @@
 #include <string.h>
 #include "render.h"
 #include "mesh.h"
+#include "moon.h"
 #include "texture.h"
 #include "vshader_shbin.h"
 #include "atmosphere_shbin.h"
@@ -29,7 +30,7 @@ static gpu_mesh bodies[BODY_COUNT], props[BODY_COUNT][8], grass[BODY_COUNT][GRAS
 static gpu_mesh water[BODY_COUNT], shell_in[BODY_COUNT], clouds[BODY_COUNT];
 static gpu_mesh astro_body, astro_arm, astro_leg, flame_outer, flame_inner, stars;
 static gpu_mesh rod_seg, bobber_top, bobber_bot, fish_mesh, gem;
-static gpu_mesh cave_tunnel[BODY_COUNT], cave_cavern[BODY_COUNT], cave_crystals[BODY_COUNT], cave_shell[BODY_COUNT];
+static gpu_mesh moon_oct[BODY_COUNT][8], moon_gems[BODY_COUNT];   /* carved moons, in octants */
 #define LINE_SEGS 12
 #define LINE_VERTS (LINE_SEGS * 6)
 #define SPLASH_VERTS (8 * 6)
@@ -51,9 +52,10 @@ static const C3D_Material mat_water = {
 static const C3D_Material mat_glow = {
     { 0, 0, 0 }, { 0, 0, 0 }, { 0, 0, 0 }, { 0, 0, 0 }, { 1.0f, 1.0f, 1.0f },
 };
-/* cave rock: the light is baked into the vertex colours; the sun barely reaches in */
-static const C3D_Material mat_cave = {
-    { 0.85f, 0.85f, 0.88f }, { 0.18f, 0.18f, 0.18f }, { 0.04f, 0.04f, 0.04f }, { 0, 0, 0 }, { 0, 0, 0 },
+/* carved moons: a little more ambient than the planets so cave walls the sun cannot reach are
+   never pitch black; the depth dimming and crystal light are baked into the vertex colours */
+static const C3D_Material mat_moon = {
+    { 0.42f, 0.42f, 0.48f }, { 0.75f, 0.75f, 0.75f }, { 0.08f, 0.08f, 0.08f }, { 0, 0, 0 }, { 0, 0, 0 },
 };
 
 static gpu_mesh upload(mesh m) {
@@ -137,10 +139,14 @@ void render_init(const world *w) {
     fish_mesh = upload(mesh_fish());
     gem = upload(mesh_gem(1.0f, 0xD0FF70FF));   /* unit, scaled per firefly */
     for (int i = 0; i < BODY_COUNT; i++) {
-        cave_tunnel[i] = upload(mesh_cave_tunnel(w, i));
-        cave_cavern[i] = upload(mesh_cave_cavern(w, i));
-        cave_crystals[i] = upload(mesh_cave_crystals(w, i));
-        cave_shell[i] = upload(mesh_cave_shell(w, i));
+        gpu_mesh none = { 0, 0, 0, 0 };
+        moon_gems[i] = none;
+        for (int o = 0; o < 8; o++) moon_oct[i][o] = none;
+        if (!w->b[i].caves.enabled) continue;
+        mesh octs[8];
+        moon_build(w, i, octs);
+        for (int o = 0; o < 8; o++) moon_oct[i][o] = upload(octs[o]);
+        moon_gems[i] = upload(moon_crystals(w, i));
     }
     line_vbo = linearAlloc(LINE_VERTS * sizeof(vertex));
     splash_vbo = linearAlloc(SPLASH_VERTS * sizeof(vertex));
@@ -495,21 +501,28 @@ void render_scene(const world *w, const player *p, const camera *c, const fishin
     for (int i = 0; i < BODY_COUNT; i++) {
         const body *b = &w->b[i];
         mtx_translate(&model, b->pos);
-        draw_ex(&bodies[i], &model, b->emissive ? &mat_glow : &mat_lit, has_detail[i] ? &detail[i] : NULL, uMV);
-        /* props are a few units tall: skip them once the planet is far enough that they
-           would be smaller than a pixel anyway, and skip the octants facing away from us */
         v3 to_cam = v3_sub(c->pos, b->pos);
         float gap = v3_len(to_cam) - b->radius;
-        if (b->cave.enabled && gap < 80.0f) {
-            draw(&cave_shell[i], &model, &mat_cave);
-            draw(&cave_tunnel[i], &model, &mat_cave);
-            draw(&cave_cavern[i], &model, &mat_cave);
-            /* crystals glow; the orb at the heart breathes */
-            C3D_Material orb = mat_glow;
-            float pulse = 0.85f + 0.15f * sinf(time * 2.2f);
-            orb.emission[0] = orb.emission[1] = orb.emission[2] = pulse;
-            draw(&cave_crystals[i], &model, &orb);
+        if (b->caves.enabled) {
+            /* a carved moon: its surface and caves are one mesh in octants; from inside, every
+               octant can be in view, from outside only the near ones */
+            v3 d = v3_norm(to_cam);
+            for (int o = 0; o < 8; o++) {
+                v3 od = v3_norm(v3_((o & 1) ? -1 : 1, (o & 2) ? -1 : 1, (o & 4) ? -1 : 1));
+                if (gap > 0 && v3_dot(od, d) < -0.35f) continue;
+                draw_ex(&moon_oct[i][o], &model, &mat_moon, has_detail[i] ? &detail[i] : NULL, uMV);
+            }
+            if (gap < 120.0f) {   /* crystals glow; the orb at the heart breathes */
+                C3D_Material orb = mat_glow;
+                float pulse = 0.85f + 0.15f * sinf(time * 2.2f);
+                orb.emission[0] = orb.emission[1] = orb.emission[2] = pulse;
+                draw(&moon_gems[i], &model, &orb);
+            }
+        } else {
+            draw_ex(&bodies[i], &model, b->emissive ? &mat_glow : &mat_lit, has_detail[i] ? &detail[i] : NULL, uMV);
         }
+        /* props are a few units tall: skip them once the planet is far enough that they
+           would be smaller than a pixel anyway, and skip the octants facing away from us */
         if (gap < 700.0f) {
             v3 d = v3_norm(to_cam);
             for (int o = 0; o < 8; o++) {
@@ -628,7 +641,7 @@ void render_fini(void) {
     gpu_free(&astro_body); gpu_free(&astro_arm); gpu_free(&astro_leg);
     gpu_free(&flame_outer); gpu_free(&flame_inner); gpu_free(&stars);
     gpu_free(&rod_seg); gpu_free(&bobber_top); gpu_free(&bobber_bot); gpu_free(&fish_mesh); gpu_free(&gem);
-    for (int i = 0; i < BODY_COUNT; i++) { gpu_free(&cave_tunnel[i]); gpu_free(&cave_cavern[i]); gpu_free(&cave_crystals[i]); gpu_free(&cave_shell[i]); }
+    for (int i = 0; i < BODY_COUNT; i++) { gpu_free(&moon_gems[i]); for (int o = 0; o < 8; o++) gpu_free(&moon_oct[i][o]); }
     linearFree(line_vbo); linearFree(splash_vbo);
     shaderProgramFree(&program);
     shaderProgramFree(&program_atmo);

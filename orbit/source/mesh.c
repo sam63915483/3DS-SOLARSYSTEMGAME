@@ -93,20 +93,7 @@ static uint32_t flat_color(const void *c, v3 dir, int ring, int seg) { (void)dir
 mesh mesh_planet(const world *w, int i) {
     sphere_ctx c = { w, i, 0, 0 };
     float rep = w->b[i].emissive ? 0 : w->b[i].radius / 4.0f;   /* one repeat every ~12.5 units at the equator */
-    mesh m = sphere_grid(w->b[i].rings, w->b[i].segs, rep, planet_radius, planet_color, &c, 1);
-    if (w->b[i].cave.enabled) {
-        /* open the tunnel mouth: drop every triangle with a corner inside the tunnel; the
-           cave's skirt lies over the ragged edge that leaves */
-        int out = 0;
-        for (int t = 0; t + 2 < m.idx_count; t += 3) {
-            int cut = 0;
-            for (int k = 0; k < 3; k++) if (world_in_hole(w, i, v3_norm(vpos(&m.v[m.idx[t + k]])))) cut = 1;
-            if (cut) continue;
-            m.idx[out++] = m.idx[t]; m.idx[out++] = m.idx[t + 1]; m.idx[out++] = m.idx[t + 2];
-        }
-        m.idx_count = out;
-    }
-    return m;
+    return sphere_grid(w->b[i].rings, w->b[i].segs, rep, planet_radius, planet_color, &c, 1);
 }
 
 mesh mesh_water(const world *w, int i, uint32_t col) {
