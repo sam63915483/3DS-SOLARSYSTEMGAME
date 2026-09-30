@@ -27,9 +27,9 @@ static C3D_Light light;
 static C3D_LightLut lutPhong;
 
 static gpu_mesh bodies[BODY_COUNT], props[BODY_COUNT][8], grass[BODY_COUNT][GRASS_CELLS];
-#define SHELLS 4   /* concentric atmosphere layers, each a soft band, stacking into a gradient */
-static const float shell_r[SHELLS] = { 0.35f, 0.75f, 1.20f, 1.70f };
-static const u32 shell_a[SHELLS] = { 0xC0, 0x70, 0x40, 0x24 };
+#define SHELLS 1   /* one atmosphere shell, a soft band, outside faces only */
+static const float shell_r[SHELLS] = { 0.7f };
+static const u32 shell_a[SHELLS] = { 0xB8 };
 static gpu_mesh water[BODY_COUNT], shells[BODY_COUNT][SHELLS], clouds[BODY_COUNT];
 static gpu_mesh astro_body, astro_arm, astro_leg, flame_outer, flame_inner, stars;
 static C3D_Tex detail[BODY_COUNT], water_tex, cloud_tex;
@@ -413,7 +413,9 @@ void render_scene(const world *w, const player *p, const camera *c, float time) 
         draw_ex(&water[i], &model, &mat_water, has_water_tex ? &water_tex : NULL, uMV);
     }
 
-    /* clouds: lit, textured alpha, drifting */
+    /* clouds: lit, textured alpha, drifting; outside faces only so they never dim the sky
+       from the ground */
+    C3D_CullFace(GPU_CULL_BACK_CCW);
     for (int i = 0; i < BODY_COUNT; i++) {
         if (!clouds[i].count || !has_cloud_tex) continue;
         mtx_translate(&model, w->b[i].pos);
