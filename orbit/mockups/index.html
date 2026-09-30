@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Orbit gimbal mockups</title>
+<style>
+  :root { --bg:#14161f; --fg:#e8e8ee; --dim:#9098a8; --accent:#ffc040; --panel:#20243a; }
+  body { margin:0; padding:24px; background:var(--bg); color:var(--fg);
+         font:15px/1.45 system-ui, Segoe UI, sans-serif; }
+  h1 { font-weight:600; margin:0 0 4px; }
+  h2 { font-weight:600; margin:40px 0 6px; color:var(--accent); }
+  p  { max-width:1200px; margin:6px 0 14px; }
+  .note { color:var(--dim); font-size:13px; }
+  canvas { image-rendering: pixelated; image-rendering: crisp-edges; display:block; background:#000; }
+  .main  { width:1200px; height:720px; border:1px solid #333; }
+  .strip { display:flex; gap:24px; margin-top:14px; }
+  .strip figure { margin:0; }
+  .strip canvas { width:300px; height:300px; border:1px solid #333; }
+  .strip figcaption { color:var(--dim); font-size:13px; margin-top:6px; max-width:300px; }
+  .swatches span { display:inline-block; padding:2px 8px; margin:0 6px 6px 0; border-radius:3px;
+                   font-family:ui-monospace, Consolas, monospace; font-size:12px; color:#000; }
+  code { font-family:ui-monospace, Consolas, monospace; font-size:13px; color:#ffd884; }
+</style>
+</head>
+<body>
+
+<h1>Orbit &mdash; gimbal instrument mockups</h1>
+<p class="note">Top screen is 400&times;240, shown at 3&times;. Instrument lives in a 90&times;90 box at (4,146) &mdash; 4&nbsp;px from the left and bottom edges.
+Every mark is a filled rect, filled triangle, filled circle, or 5&times;7 capital font pixel; each design is one
+<code>gimbalX(ctx, x, y, state)</code> function below so it can be moved to citro2d nearly line by line.
+Palette:
+<span class="swatches">
+ <span style="background:#FFC040">FFC040 accent</span>
+ <span style="background:#F0F0F0">F0F0F0 off-white</span>
+ <span style="background:#9098A8">9098A8 grey-blue</span>
+ <span style="background:#20243A;color:#fff">20243A panel</span>
+ <span style="background:#3C7CC8;color:#fff">3C7CC8 sky (A,B)</span>
+ <span style="background:#4E8A3A;color:#fff">4E8A3A planet (A,B)</span>
+ <span style="background:#60E878">60E878 phosphor (C)</span>
+</span></p>
+
+<!-- ============================ A ============================ -->
+<h2>A &mdash; Navball / artificial horizon</h2>
+<p>A 60&nbsp;px ball split into a sky-blue upper half and a planet-green lower half. The horizon chord rotates with roll and
+slides up as you pitch toward the planet (a wholly green ball means the planet is dead ahead, wholly blue means it is behind
+you); two faint ticks either side of the horizon give a sense of pitch, and a small white notch on the rim turns with yaw.
+A fixed orange "wings" reticle marks you. Jets sit around the ball where they act: UP is the triangle above, DOWN the
+triangle below, the two roll arrows ride the shoulders of the ball pointing the way you will turn, FORWARD lights the
+centre dot of the reticle, and FWD / BRAKE are lit key-caps along the bottom. Reads like a flight sim: green on the bottom
+means you are upright, more green means nose down.</p>
+<p class="note">Build cost: 3 circles, a 12-triangle fan for the planet segment, 1 quad (2 triangles) for the horizon, 5 small triangles, ~10 rects, two 5x7 labels.</p>
+<canvas id="mainA" class="main" width="400" height="240"></canvas>
+<div class="strip">
+  <figure><canvas id="stripA0" width="100" height="100"></canvas><figcaption>Level, idle (on the ground).</figcaption></figure>
+  <figure><canvas id="stripA1" width="100" height="100"></canvas><figcaption>Pitched down 40&deg;, rolled right 20&deg;, UP firing.</figcaption></figure>
+  <figure><canvas id="stripA2" width="100" height="100"></canvas><figcaption>Looking straight down at the planet, FORWARD + ROLL RIGHT + BRAKE.</figcaption></figure>
+</div>
+
+<!-- ============================ B ============================ -->
+<h2>B &mdash; Astronaut and planet dot, with a thrust key column</h2>
+<p>A 64&nbsp;px square viewport that always shows <em>you</em>: an upright blocky astronaut seen from behind. The planet is a green
+dot drawn where it sits in your view &mdash; below you when level, sliding round the frame as you roll, drifting toward the centre
+and growing as you pitch to face it (at the centre and largest it is dead ahead; if it is behind you it becomes a hollow ring).
+A short sky-blue bar through the dot is the planet's horizon, so roll is obvious even at a glance. Jets show twice: as orange flames
+on the figure itself (under the boots for UP, over the helmet for DOWN, out of the hands for roll, a glowing backpack for FORWARD)
+and as a column of six key-caps down the right edge that invert to orange when lit. A tiny grey pitch/roll readout sits under the
+frame for the numerically minded. Reads like a character portrait: you see your little astronaut and where the ground is.</p>
+<p class="note">Build cost: ~14 rects (frame, figure, key-caps), 1&ndash;2 circles, up to 4 flame triangles, 1 quad for the horizon bar, 6 labels + 1 readout string.</p>
+<canvas id="mainB" class="main" width="400" height="240"></canvas>
+<div class="strip">
+  <figure><canvas id="stripB0" width="100" height="100"></canvas><figcaption>Level, idle (on the ground).</figcaption></figure>
+  <figure><canvas id="stripB1" width="100" height="100"></canvas><figcaption>Pitched down 40&deg;, rolled right 20&deg;, UP firing.</figcaption></figure>
+  <figure><canvas id="stripB2" width="100" height="100"></canvas><figcaption>Looking straight down at the planet, FORWARD + ROLL RIGHT + BRAKE.</figcaption></figure>
+</div>
+
+<!-- ============================ C ============================ -->
+<h2>C &mdash; Retro radar scope with a six-segment jet ring</h2>
+<p>A dark bezel with a crosshair, tick marks and a thin "level" ring. A phosphor-green needle and dot show where the planet
+is as a polar plot: the direction of the needle is the direction of "down" in your view (straight down the screen when upright,
+swinging round as you roll), and its length is how far you are from facing the planet &mdash; the dot rides exactly on the ring
+when you are level, shrinks to the centre as you pitch down to look at the planet, and pushes outside the ring when the planet
+is behind you (drawn hollow). Around the outside, six trapezoid segments light orange for each jet, each with a two- or
+three-letter label beside it: UP top, DN bottom, RL and RR on the upper diagonals, BRK and FWD on the lower ones. Reads like
+an old radar or an early Elite-style scanner: the dot on the ring and nothing lit means you are hanging level and coasting.</p>
+<p class="note">Build cost: 2 rects (bezel), 2 circles (ring), ~6 rects (crosshair/ticks), 6 quads (12 triangles), 1 quad for the needle, 2 circles for the dot, 6 labels.</p>
+<canvas id="mainC" class="main" width="400" height="240"></canvas>
+<div class="strip">
+  <figure><canvas id="stripC0" width="100" height="100"></canvas><figcaption>Level, idle (on the ground).</figcaption></figure>
+  <figure><canvas id="stripC1" width="100" height="100"></canvas><figcaption>Pitched down 40&deg;, rolled right 20&deg;, UP firing.</figcaption></figure>
+  <figure><canvas id="stripC2" width="100" height="100"></canvas><figcaption>Looking straight down at the planet, FORWARD + ROLL RIGHT + BRAKE.</figcaption></figure>
+</div>
+
+<script>
+'use strict';
+/* =====================================================================
+   PRIMITIVES  (each maps to one citro2d call)
+     rect   -> C2D_DrawRectSolid(x, y, 0, w, h, col)
+     circle -> C2D_DrawCircleSolid(cx, cy, 0, r, col)
+     tri    -> C2D_DrawTriangle(x0,y0,col, x1,y1,col, x2,y2,col, 0)
+     line   -> a thin quad = two C2D_DrawTriangle calls
+     text   -> one 1x1 rect per lit font pixel (or a 5x7 sprite sheet)
+   Colours are 0xRRGGBB like the game's HUD; alpha is optional, flat.
+   ===================================================================== */
+const ORANGE = 0xFFC040, WHITE = 0xF0F0F0, GREY = 0x9098A8, DARK = 0x20243A;
+const SKY = 0x3C7CC8, PLANET = 0x4E8A3A;   // extras for A and B
+const PHOSPHOR = 0x60E878;                  // extra for C
+
+function css(hex, a) {
+  const r = (hex >> 16) & 255, g = (hex >> 8) & 255, b = hex & 255;
+  return 'rgba(' + r + ',' + g + ',' + b + ',' + (a === undefined ? 1 : a) + ')';
+}
+function rect(ctx, x, y, w, h, col, a) { ctx.fillStyle = css(col, a); ctx.fillRect(x, y, w, h); }
+function circle(ctx, cx, cy, r, col, a) {
+  ctx.fillStyle = css(col, a); ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+}
+function tri(ctx, x0, y0, x1, y1, x2, y2, col, a) {
+  ctx.fillStyle = css(col, a); ctx.beginPath();
+  ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.lineTo(x2, y2); ctx.closePath(); ctx.fill();
+}
+/* Straight line of width w from (x0,y0) to (x1,y1) as a quad = two triangles. */
+function line(ctx, x0, y0, x1, y1, w, col, a) {
+  const dx = x1 - x0, dy = y1 - y0, len = Math.hypot(dx, dy) || 1;
+  const nx = -dy / len * w / 2, ny = dx / len * w / 2;   // half-width normal
+  tri(ctx, x0 + nx, y0 + ny, x1 + nx, y1 + ny, x1 - nx, y1 - ny, col, a);
+  tri(ctx, x0 + nx, y0 + ny, x1 - nx, y1 - ny, x0 - nx, y0 - ny, col, a);
+}
+/* Small isosceles arrow head centred on (px,py) pointing along angle ang (screen radians, y down). */
+function arrow(ctx, px, py, ang, size, col, a) {
+  const cx = Math.cos(ang), cy = Math.sin(ang), nx = -cy, ny = cx;
+  tri(ctx, px + cx * size, py + cy * size,
+           px - cx * size * 0.6 + nx * size * 0.7, py - cy * size * 0.6 + ny * size * 0.7,
+           px - cx * size * 0.6 - nx * size * 0.7, py - cy * size * 0.6 - ny * size * 0.7, col, a);
+}
+
+/* ---- 5x7 capital font.  Each glyph is 7 rows of 5 chars, '#' = lit. Advance is 6 px. ---- */
+const FONT = {
+ 'A':['.###.','#...#','#...#','#####','#...#','#...#','#...#'],
+ 'B':['####.','#...#','#...#','####.','#...#','#...#','####.'],
+ 'C':['.####','#....','#....','#....','#....','#....','.####'],
+ 'D':['####.','#...#','#...#','#...#','#...#','#...#','####.'],
+ 'E':['#####','#....','#....','####.','#....','#....','#####'],
+ 'F':['#####','#....','#....','####.','#....','#....','#....'],
+ 'G':['.####','#....','#....','#.###','#...#','#...#','.###.'],
+ 'H':['#...#','#...#','#...#','#####','#...#','#...#','#...#'],
+ 'I':['#####','..#..','..#..','..#..','..#..','..#..','#####'],
+ 'J':['..###','...#.','...#.','...#.','...#.','#..#.','.##..'],
+ 'K':['#...#','#..#.','#.#..','##...','#.#..','#..#.','#...#'],
+ 'L':['#....','#....','#....','#....','#....','#....','#####'],
+ 'M':['#...#','##.##','#.#.#','#.#.#','#...#','#...#','#...#'],
+ 'N':['#...#','##..#','#.#.#','#..##','#...#','#...#','#...#'],
+ 'O':['.###.','#...#','#...#','#...#','#...#','#...#','.###.'],
+ 'P':['####.','#...#','#...#','####.','#....','#....','#....'],
+ 'Q':['.###.','#...#','#...#','#...#','#.#.#','#..#.','.##.#'],
+ 'R':['####.','#...#','#...#','####.','#.#..','#..#.','#...#'],
+ 'S':['.####','#....','#....','.###.','....#','....#','####.'],
+ 'T':['#####','..#..','..#..','..#..','..#..','..#..','..#..'],
+ 'U':['#...#','#...#','#...#','#...#','#...#','#...#','.###.'],
+ 'V':['#...#','#...#','#...#','#...#','#...#','.#.#.','..#..'],
+ 'W':['#...#','#...#','#...#','#.#.#','#.#.#','##.##','#...#'],
+ 'X':['#...#','#...#','.#.#.','..#..','.#.#.','#...#','#...#'],
+ 'Y':['#...#','#...#','.#.#.','..#..','..#..','..#..','..#..'],
+ 'Z':['#####','....#','...#.','..#..','.#...','#....','#####'],
+ '0':['.###.','#...#','#..##','#.#.#','##..#','#...#','.###.'],
+ '1':['..#..','.##..','..#..','..#..','..#..','..#..','.###.'],
+ '2':['.###.','#...#','....#','...#.','..#..','.#...','#####'],
+ '3':['#####','...#.','..#..','...#.','....#','#...#','.###.'],
+ '4':['...#.','..##.','.#.#.','#..#.','#####','...#.','...#.'],
+ '5':['#####','#....','####.','....#','....#','#...#','.###.'],
+ '6':['..##.','.#...','#....','####.','#...#','#...#','.###.'],
+ '7':['#####','....#','...#.','..#..','.#...','.#...','.#...'],
+ '8':['.###.','#...#','#...#','.###.','#...#','#...#','.###.'],
+ '9':['.###.','#...#','#...#','.####','....#','...#.','.##..'],
+ '+':['.....','..#..','..#..','#####','..#..','..#..','.....'],
+ '-':['.....','.....','.....','#####','.....','.....','.....'],
+ ' ':['.....','.....','.....','.....','.....','.....','.....'],
+};
+function textWidth(s) { return s.length * 6 - 1; }
+function text(ctx, x, y, s, col, a) {
+  for (let i = 0; i < s.length; i++) {
+    const g = FONT[s[i]] || FONT[' '];
+    for (let row = 0; row < 7; row++)
+      for (let c = 0; c < 5; c++)
+        if (g[row][c] === '#') rect(ctx, x + i * 6 + c, y + row, 1, 1, col, a);
+  }
+}
+/* text centred on cx */
+function textC(ctx, cx, y, s, col, a) { text(ctx, cx - (textWidth(s) >> 1), y, s, col, a); }
+
+/* =====================================================================
+   ORIENTATION
+   state: { pitch, roll, yaw (radians), up, down, fwd, rollL, rollR, brake }
+   pitch > 0 = nose up, roll > 0 = roll right (clockwise from the pilot's seat).
+
+   Everything below works from the "down" vector (toward the planet) expressed
+   in the PLAYER'S frame: x = right, y = up, z = forward.  In the game, skip the
+   trig and just transform the (planet - player) direction by the inverse of
+   the player's rotation; the mockups derive it from pitch/roll like this:
+   ===================================================================== */
+function downLocal(st) {
+  const c = Math.cos(st.pitch), s = Math.sin(st.pitch);
+  return { x:  c * Math.sin(st.roll),   // rolling right puts "down" on your right
+           y: -c * Math.cos(st.roll),   // mostly below you when level
+           z: -s };                     // nose down => planet is ahead (z > 0)
+}
+
+/* =====================================================================
+   A  --  NAVBALL / ARTIFICIAL HORIZON
+   ===================================================================== */
+function gimbalA(ctx, ox, oy, st) {
+  const d  = downLocal(st);
+  const cx = ox + 45, cy = oy + 40, R = 30;     // ball spans x 15..75, y 10..70 in the box
+  const t  = d.z;                               // +1 planet ahead, -1 planet behind
+  const hl = Math.hypot(d.x, d.y);              // how much of "down" is in the screen plane
+
+  circle(ctx, cx, cy, R + 3, DARK, 0.85);       // rim
+  circle(ctx, cx, cy, R, SKY);                  // sky half (whole ball, planet drawn over it)
+
+  if (t > 0.999) {
+    circle(ctx, cx, cy, R, PLANET);             // staring straight at the planet
+  } else if (t > -0.999) {
+    /* Screen-space unit vector pointing toward the planet (screen y grows downward). */
+    const dx = d.x / hl, dy = -d.y / hl;
+    const aD = Math.atan2(dy, dx);              // angle of "down" on screen
+    const alpha = Math.acos(-t);                // half-angle of the planet segment's arc
+    const hx = cx - dx * R * t, hy = cy - dy * R * t;   // midpoint of the horizon chord
+    const N = 12;                               // triangle fan for the circular segment
+    for (let i = 0; i < N; i++) {
+      const a0 = aD - alpha + 2 * alpha * i / N;
+      const a1 = aD - alpha + 2 * alpha * (i + 1) / N;
+      tri(ctx, hx, hy, cx + R * Math.cos(a0), cy + R * Math.sin(a0),
+                       cx + R * Math.cos(a1), cy + R * Math.sin(a1), PLANET);
+    }
+    /* Horizon chord and two pitch ticks parallel to it. */
+    const hh = R * Math.sqrt(1 - t * t);        // half chord length
+    const px = -dy, py = dx;                    // unit vector along the horizon
+    line(ctx, hx + px * hh, hy + py * hh, hx - px * hh, hy - py * hh, 2, WHITE);
+    for (const k of [-0.45, 0.45]) {
+      const tk = t + k;                         // where the horizon would be for +/-27 deg
+      if (tk > -0.9 && tk < 0.9) {
+        const kx = cx - dx * R * tk, ky = cy - dy * R * tk;
+        line(ctx, kx + px * 6, ky + py * 6, kx - px * 6, ky - py * 6, 1, WHITE, 0.6);
+      }
+    }
+  }
+
+  /* Heading notch on the rim: rotates with yaw. */
+  const ha = -Math.PI / 2 + st.yaw;
+  arrow(ctx, cx + (R - 3) * Math.cos(ha), cy + (R - 3) * Math.sin(ha), ha, 3, WHITE);
+
+  /* Fixed reticle ("you"): orange wings, centre dot lights for FORWARD thrust. */
+  rect(ctx, cx - 13, cy - 1, 9, 2, ORANGE);
+  rect(ctx, cx + 4,  cy - 1, 9, 2, ORANGE);
+  rect(ctx, cx - 3,  cy - 3, 6, 6, WHITE);
+  rect(ctx, cx - 2,  cy - 2, 4, 4, st.fwd ? ORANGE : DARK);
+
+  /* Jets around the ball. Lit = orange, idle = dim grey-blue. */
+  const lit = (on) => on ? ORANGE : GREY, dimA = (on) => on ? 1 : 0.45;
+  tri(ctx, cx, oy + 2,  cx - 5, oy + 9,  cx + 5, oy + 9,  lit(st.up),   dimA(st.up));    // UP
+  tri(ctx, cx, oy + 78, cx - 5, oy + 71, cx + 5, oy + 71, lit(st.down), dimA(st.down));  // DOWN
+  const rr = R + 7, q = Math.PI / 4;
+  arrow(ctx, cx + rr * Math.cos(-q),     cy + rr * Math.sin(-q),     q,     5, lit(st.rollR), dimA(st.rollR)); // ROLL R: clockwise
+  arrow(ctx, cx + rr * Math.cos(-3 * q), cy + rr * Math.sin(-3 * q), 3 * q, 5, lit(st.rollL), dimA(st.rollL)); // ROLL L: anticlockwise
+
+  /* Key-caps along the bottom: FWD (left) and BRAKE (right). */
+  keycap(ctx, ox + 6,  oy + 78, 21, 11, 'FWD',   st.fwd);
+  keycap(ctx, ox + 53, oy + 78, 33, 11, 'BRAKE', st.brake);
+}
+/* A labelled key-cap: dark with grey label when idle, solid orange with dark label when lit. */
+function keycap(ctx, x, y, w, h, label, on) {
+  rect(ctx, x, y, w, h, on ? ORANGE : GREY, on ? 1 : 0.6);
+  rect(ctx, x + 1, y + 1, w - 2, h - 2, on ? ORANGE : DARK, on ? 1 : 0.85);
+  textC(ctx, x + (w >> 1), y + 2, label, on ? DARK : GREY);
+}
+
+/* =====================================================================
+   B  --  ASTRONAUT PORTRAIT + PLANET DOT + THRUST KEY COLUMN
+   ===================================================================== */
+function gimbalB(ctx, ox, oy, st) {
+  const d  = downLocal(st);
+  const cx = ox + 32, cy = oy + 32;             // centre of the 64x64 viewport
+
+  /* Viewport frame with level reference ticks at mid height. */
+  rect(ctx, ox, oy, 64, 64, GREY);
+  rect(ctx, ox + 1, oy + 1, 62, 62, DARK, 0.9);
+  rect(ctx, ox + 1,  cy, 4, 1, GREY);
+  rect(ctx, ox + 59, cy, 4, 1, GREY);
+
+  /* Planet dot: position = where the planet is in your view, size = how far ahead it is. */
+  const K = 24;                                  // screen px per unit of sideways "down"
+  const px = cx + d.x * K, py = cy - d.y * K;
+  const hl = Math.hypot(d.x, d.y);
+  /* Horizon bar direction: perpendicular to "down" on screen (falls back to roll when facing the planet). */
+  let bx, by;
+  if (hl > 0.05) { bx = d.y / hl; by = d.x / hl; }
+  else           { bx = Math.cos(st.roll); by = -Math.sin(st.roll); }
+  if (d.z >= 0) {
+    const r = 4 + Math.round(6 * d.z);           // 4 px when abeam .. 10 px when dead ahead
+    line(ctx, px - bx * (r + 6), py - by * (r + 6), px + bx * (r + 6), py + by * (r + 6), 1, SKY);
+    circle(ctx, px, py, r, PLANET);
+  } else {
+    circle(ctx, px, py, 5, PLANET, 0.7);         // planet is behind you: hollow, dim
+    circle(ctx, px, py, 3, DARK);
+  }
+
+  /* Astronaut, back view, always upright (it is you). */
+  circle(ctx, cx, cy - 8, 3.5, WHITE);           // helmet
+  rect(ctx, cx - 3, cy - 4, 6, 8, WHITE);        // torso
+  rect(ctx, cx - 5, cy - 4, 2, 6, WHITE);        // arms
+  rect(ctx, cx + 3, cy - 4, 2, 6, WHITE);
+  rect(ctx, cx - 3, cy + 4, 2, 6, WHITE);        // legs
+  rect(ctx, cx + 1, cy + 4, 2, 6, WHITE);
+  if (st.fwd) rect(ctx, cx - 3, cy - 4, 6, 7, ORANGE);   // backpack glow = FORWARD
+  rect(ctx, cx - 2, cy - 3, 4, 5, GREY);         // backpack
+
+  /* Flames on the figure. */
+  if (st.up)    tri(ctx, cx - 4, cy + 10, cx + 4, cy + 10, cx, cy + 16, ORANGE);   // under the boots
+  if (st.down)  tri(ctx, cx - 4, cy - 12, cx + 4, cy - 12, cx, cy - 18, ORANGE);   // over the helmet
+  if (st.rollR) tri(ctx, cx + 5, cy - 3, cx + 5, cy + 1, cx + 11, cy - 1, ORANGE); // right hand
+  if (st.rollL) tri(ctx, cx - 5, cy - 3, cx - 5, cy + 1, cx - 11, cy - 1, ORANGE); // left hand
+
+  /* Thrust key column on the right: 6 caps of 24x12, 1 px apart. */
+  const caps = [['UP', st.up], ['DN', st.down], ['FWD', st.fwd],
+                ['RL', st.rollL], ['RR', st.rollR], ['BRK', st.brake]];
+  for (let i = 0; i < caps.length; i++)
+    keycap(ctx, ox + 66, oy + i * 13, 24, 12, caps[i][0], caps[i][1]);
+
+  /* Numeric pitch / roll readout under the frame. */
+  text(ctx, ox + 3, oy + 68, 'P' + fmtDeg(st.pitch) + ' R' + fmtDeg(st.roll), GREY);
+}
+function fmtDeg(rad) {
+  const deg = Math.round(rad * 180 / Math.PI);
+  return (deg < 0 ? '-' : '+') + Math.abs(deg);
+}
+
+/* =====================================================================
+   C  --  RETRO RADAR SCOPE WITH SIX-SEGMENT JET RING
+   ===================================================================== */
+function gimbalC(ctx, ox, oy, st) {
+  const d  = downLocal(st);
+  const cx = ox + 45, cy = oy + 45;
+
+  /* Bezel. */
+  rect(ctx, ox, oy, 90, 90, GREY, 0.7);
+  rect(ctx, ox + 1, oy + 1, 88, 88, DARK, 0.8);
+
+  /* Level ring (dot sits on it when you are upright) and crosshair with ticks. */
+  circle(ctx, cx, cy, 17, GREY);
+  circle(ctx, cx, cy, 16, DARK);
+  rect(ctx, cx - 22, cy, 45, 1, GREY);
+  rect(ctx, cx, cy - 22, 1, 45, GREY);
+  rect(ctx, cx - 9, cy - 1, 1, 3, GREY);  rect(ctx, cx + 9, cy - 1, 1, 3, GREY);
+  rect(ctx, cx - 1, cy - 9, 3, 1, GREY);  rect(ctx, cx - 1, cy + 9, 3, 1, GREY);
+
+  /* Six jet segments: trapezoids between radius 25 and 30, +/-20 degrees wide, plus labels at radius 38. */
+  const segs = [[-90, 'UP', st.up], [90, 'DN', st.down], [-30, 'RR', st.rollR],
+                [30, 'FWD', st.fwd], [150, 'BRK', st.brake], [-150, 'RL', st.rollL]];
+  for (const [degA, label, on] of segs) {
+    const a0 = (degA - 20) * Math.PI / 180, a1 = (degA + 20) * Math.PI / 180, am = degA * Math.PI / 180;
+    const col = on ? ORANGE : GREY, al = on ? 1 : 0.4;
+    const x0 = cx + 25 * Math.cos(a0), y0 = cy + 25 * Math.sin(a0), x1 = cx + 30 * Math.cos(a0), y1 = cy + 30 * Math.sin(a0);
+    const x2 = cx + 30 * Math.cos(a1), y2 = cy + 30 * Math.sin(a1), x3 = cx + 25 * Math.cos(a1), y3 = cy + 25 * Math.sin(a1);
+    tri(ctx, x0, y0, x1, y1, x2, y2, col, al);
+    tri(ctx, x0, y0, x2, y2, x3, y3, col, al);
+    textC(ctx, Math.round(cx + 38 * Math.cos(am)), Math.round(cy + 38 * Math.sin(am)) - 3, label, col, on ? 1 : 0.6);
+  }
+
+  /* Down needle: direction = where the planet is on screen, length = angle away from dead ahead.
+     0 deg (planet ahead) -> centre, 90 deg (level) -> on the ring (17), 180 deg (behind) -> 24. */
+  const ang = Math.acos(Math.max(-1, Math.min(1, d.z)));
+  const rr = ang <= Math.PI / 2 ? 17 * ang / (Math.PI / 2)
+                                : 17 + 7 * (ang - Math.PI / 2) / (Math.PI / 2);
+  const hl = Math.hypot(d.x, d.y);
+  let px = cx, py = cy;
+  if (hl > 0.001) { px = cx + d.x / hl * rr; py = cy - d.y / hl * rr; }
+  line(ctx, cx, cy, px, py, 1, PHOSPHOR);
+  circle(ctx, px, py, 3, PHOSPHOR);
+  circle(ctx, px, py, d.z < 0 ? 2 : 1, DARK);   // hollow when the planet is behind you
+}
+
+/* =====================================================================
+   PAGE PLUMBING (not part of the game)
+   ===================================================================== */
+const D2R = Math.PI / 180;
+const base = { pitch: 0, roll: 0, yaw: 0, up: false, down: false, fwd: false, rollL: false, rollR: false, brake: false };
+const hero   = Object.assign({}, base, { pitch: -20 * D2R, roll: 15 * D2R, yaw: 10 * D2R, up: true, fwd: true });
+const states = [
+  Object.assign({}, base),
+  Object.assign({}, base, { pitch: -40 * D2R, roll: 20 * D2R, up: true }),
+  Object.assign({}, base, { pitch: -90 * D2R, fwd: true, rollR: true, brake: true }),
+];
+const GX = 4, GY = 240 - 4 - 90;          // instrument box origin on the 400x240 screen: (4,146)
+
+function loadImage(src) {
+  return new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = src; });
+}
+Promise.all([loadImage('screen_flight.png'), loadImage('screen_ground.png')]).then(([flight, ground]) => {
+  const designs = { A: gimbalA, B: gimbalB, C: gimbalC };
+  for (const key in designs) {
+    const fn = designs[key];
+    /* Full screen on the flight background. */
+    const main = document.getElementById('main' + key).getContext('2d');
+    main.imageSmoothingEnabled = false;
+    main.drawImage(flight, 0, 0);
+    fn(main, GX, GY, hero);
+    /* 100x100 crops of the bottom-left corner, one per state. */
+    for (let i = 0; i < 3; i++) {
+      const c = document.getElementById('strip' + key + i).getContext('2d');
+      c.imageSmoothingEnabled = false;
+      c.drawImage(i === 0 ? ground : flight, 0, 140, 100, 100, 0, 0, 100, 100);
+      fn(c, GX, GY - 140, states[i]);
+    }
+  }
+});
+</script>
+</body>
+</html>

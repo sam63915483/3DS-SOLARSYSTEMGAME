@@ -25,9 +25,9 @@ v3 world_grid_dir(const world *w, int i, int ring, int seg) {
 }
 
 void world_init(world *w) {
-    /* moons are a quarter of their planet's size, with orbits wide enough that their own pull
-       wins for a good 20 units above the surface; planets are spaced so no moon's path can
-       ever reach a neighbour */
+    /* moons are half their planet's radius, as close in as they can be while their inner edge
+       still clears the atmosphere shell by 35+ units and their own pull wins for 20-40 units
+       above the surface; planets are spaced so no moon's path can ever reach a neighbour */
     static const body defs[BODY_COUNT] = {
         { .name = "Sun",     .radius = 100.0f, .mu = MU_SUN,    .parent = -1,           .emissive = 1, .terrain = TERRAIN_SUN,
           .rings = 32, .segs = 48, .seed = 11u },
@@ -40,12 +40,12 @@ void world_init(world *w) {
         { .name = "Frost",   .radius = 96.0f,  .mu = 129024.0f, .parent = BODY_SUN,     .orbit_r = 1900.0f, .orbit_phase = 4.4f,
           .terrain = TERRAIN_FROST,   .amp = 5.0f,  .freq = 2.4f, .sea_level = -1.0f, .liquid = 0, .rings = 48, .segs = 72, .seed = 51u,
           .atmo = 0xB8D0F0FFu, .atmo_h = 30.0f },
-        { .name = "Cinder",  .radius = 20.0f,  .mu = 2400.0f,   .parent = BODY_EMBER,   .orbit_r = 260.0f,  .orbit_phase = 1.1f, .tilt = 0.35f,
-          .terrain = TERRAIN_MOON,    .amp = 1.6f,  .freq = 3.0f, .sea_level = -100.0f, .liquid = 0, .rings = 32, .segs = 48, .seed = 61u },
-        { .name = "Fern",    .radius = 32.0f,  .mu = 6144.0f,   .parent = BODY_VERDANT, .orbit_r = 384.0f,  .orbit_phase = 3.9f, .tilt = 0.5f,
-          .terrain = TERRAIN_MOON,    .amp = 2.5f,  .freq = 3.0f, .sea_level = -100.0f, .liquid = 0, .rings = 40, .segs = 60, .seed = 67u },
-        { .name = "Sleet",   .radius = 24.0f,  .mu = 3456.0f,   .parent = BODY_FROST,   .orbit_r = 300.0f,  .orbit_phase = 5.3f, .tilt = 0.25f,
-          .terrain = TERRAIN_MOON,    .amp = 2.0f,  .freq = 3.0f, .sea_level = -100.0f, .liquid = 0, .rings = 36, .segs = 54, .seed = 71u },
+        { .name = "Cinder",  .radius = 40.0f,  .mu = 9600.0f,   .parent = BODY_EMBER,   .orbit_r = 190.0f,  .orbit_phase = 1.1f, .tilt = 0.35f,
+          .terrain = TERRAIN_MOON,    .amp = 3.2f,  .freq = 3.0f, .sea_level = -100.0f, .liquid = 0, .rings = 40, .segs = 60, .seed = 61u },
+        { .name = "Fern",    .radius = 64.0f,  .mu = 24576.0f,  .parent = BODY_VERDANT, .orbit_r = 280.0f,  .orbit_phase = 3.9f, .tilt = 0.5f,
+          .terrain = TERRAIN_MOON,    .amp = 5.0f,  .freq = 3.0f, .sea_level = -100.0f, .liquid = 0, .rings = 48, .segs = 72, .seed = 67u },
+        { .name = "Sleet",   .radius = 48.0f,  .mu = 13824.0f,  .parent = BODY_FROST,   .orbit_r = 220.0f,  .orbit_phase = 5.3f, .tilt = 0.25f,
+          .terrain = TERRAIN_MOON,    .amp = 4.0f,  .freq = 3.0f, .sea_level = -100.0f, .liquid = 0, .rings = 44, .segs = 66, .seed = 71u },
     };
     w->t = 0;
     for (int i = 0; i < BODY_COUNT; i++) {
@@ -96,16 +96,23 @@ v3 world_gravity_at(const world *w, v3 p) {
     return g;
 }
 
+/* Walk down from the sun: a child owns the space inside its sphere of influence, the
+   distance where its own pull beats the parent's tidal pull, r = orbit * cbrt(mu / 2 mu_parent).
+   Comparing raw pulls instead would leave a moon almost no room on its planet-facing side. */
 int world_dominant(const world *w, v3 p) {
-    int best = 0; float best_g = -1;
-    for (int i = 0; i < BODY_COUNT; i++) {
-        v3 d = v3_sub(w->b[i].pos, p);
-        float r2 = v3_dot(d, d);
-        if (r2 < 1e-4f) r2 = 1e-4f;
-        float g = w->b[i].mu / r2;
-        if (g > best_g) { best_g = g; best = i; }
+    int cur = BODY_SUN;
+    for (;;) {
+        int next = -1; float best = 1e30f;
+        for (int i = 0; i < BODY_COUNT; i++) {
+            const body *b = &w->b[i];
+            if (b->parent != cur) continue;
+            float d = v3_len(v3_sub(p, b->pos));
+            float soi = b->orbit_r * cbrtf(b->mu / (2.0f * w->b[cur].mu));
+            if (d < soi && d < best) { best = d; next = i; }
+        }
+        if (next < 0) return cur;
+        cur = next;
     }
-    return best;
 }
 
 v3 world_frame_accel(const world *w, int i) {

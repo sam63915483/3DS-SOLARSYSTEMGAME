@@ -30,11 +30,16 @@ int main(void) {
         for (int m = 0; m < 3; m++) {
             const body *b = &w.b[moons[m]], *par = &w.b[b->parent];
             CHECK(b->parent >= BODY_EMBER && b->parent <= BODY_FROST, "moon orbits a planet");
-            CHECK_NEAR(b->radius / par->radius, 0.25f, 1e-3f, "moon is a quarter of its planet's radius");
+            CHECK_NEAR(b->radius / par->radius, 0.5f, 1e-3f, "moon is half its planet's radius");
             CHECK(b->atmo == 0, "moon has no atmosphere");
-            v3 up = v3_norm(v3_(0.3f, 0.8f, -0.5f));
-            v3 near_surface = v3_add(b->pos, v3_scale(up, b->radius + b->amp + 12.0f));
-            CHECK(world_dominant(&w, near_surface) == moons[m], "moon's own pull wins 12 units above its surface");
+            CHECK(b->orbit_r - b->radius - b->amp > par->radius + par->atmo_h + 30.0f, "moon's inner edge clears the planet's atmosphere by 30+ units");
+            CHECK(b->orbit_r < par->radius * 2.5f, "moon orbits close to its planet");
+            /* the planet-facing side is the worst case for owning the space above the surface */
+            v3 towards = v3_norm(v3_sub(par->pos, b->pos));
+            v3 near_surface = v3_add(b->pos, v3_scale(towards, b->radius + b->amp + 20.0f));
+            CHECK(world_dominant(&w, near_surface) == moons[m], "moon owns the space 20 units above its planet-facing side");
+            v3 far_out = v3_add(b->pos, v3_scale(towards, b->orbit_r * 0.6f));
+            CHECK(world_dominant(&w, far_out) == b->parent, "well away from the moon its planet takes over");
             float lo = 1e9f, hi = -1e9f;
             for (int k = 0; k < 400; k++) {
                 float a = k * 0.37f, e = k * 0.11f;

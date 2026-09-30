@@ -56,6 +56,7 @@ static void switch_frame(player *p, const world *w, int to) {
 void player_update(player *p, const world *w, const player_input *in, float dt) {
     switch_frame(p, w, world_dominant(w, p->pos));
     const body *dom = &w->b[p->dom];
+    float sp0 = v3_len(p->vel);   /* speed in this frame before this frame's forces */
 
     /* ride along with the dominant body */
     p->pos = v3_add(p->pos, v3_sub(dom->pos, dom->prev));
@@ -130,8 +131,10 @@ void player_update(player *p, const world *w, const player_input *in, float dt) 
         p->facing = fwd;
     }
 
-    float sp = v3_len(p->vel);
-    if (sp > MAX_SPEED) p->vel = v3_scale(p->vel, MAX_SPEED / sp);
+    /* thrust cannot push past the cap, but a frame switch that lands above it is left alone
+       so the world velocity never jumps */
+    float sp = v3_len(p->vel), cap = sp0 > MAX_SPEED ? sp0 : MAX_SPEED;
+    if (sp > cap) p->vel = v3_scale(p->vel, cap / sp);
     p->pos = v3_add(p->pos, v3_scale(p->vel, dt));
 
     /* surface contact */

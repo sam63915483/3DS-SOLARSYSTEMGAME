@@ -52,7 +52,8 @@ void world_update(world *w, float dt);
 v3 world_gravity_from(const world *w, int i, v3 p);
 /* Sum of gravity from every body at p. */
 v3 world_gravity_at(const world *w, v3 p);
-/* Index of the body whose pull is strongest at p. */
+/* Index of the body whose frame the player should use at p: the innermost body whose sphere
+   of influence contains p (the sun when none does). */
 int world_dominant(const world *w, v3 p);
 /* Acceleration of body i's frame: the pull of everything it orbits, at the centres they orbit
    from. Subtract it from the gravity felt near i so a circular orbit does not read as a push. */
