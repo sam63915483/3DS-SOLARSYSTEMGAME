@@ -26,7 +26,7 @@ static void button(int x, int w, const char *label, int lit, u32 text) {
     font_draw(label, x + (w - font_width(label, 1)) / 2, BTN_Y + 7, 1, text);
 }
 
-void hud_draw(C3D_RenderTarget *bottom, const world *w, const player *p, const camera *c, float fps) {
+void hud_draw(C3D_RenderTarget *bottom, const world *w, const player *p, const camera *c, float fps, int gyro_settling) {
     C2D_TargetClear(bottom, C2D_Color32(0x10, 0x12, 0x1A, 0xFF));
     C2D_SceneBegin(bottom);
 
@@ -43,7 +43,7 @@ void hud_draw(C3D_RenderTarget *bottom, const world *w, const player *p, const c
     font_draw(buf, 100, 11, 1, dim);
     button(BTN_X, BTN_W, c->first_person ? "VIEW: 1ST" : "VIEW: 3RD", 0, white);
     /* the gyro button pops up beside it in first person */
-    if (c->first_person) button(GYRO_X, GYRO_W, c->gyro ? "GYRO ON" : "GYRO", c->gyro, white);
+    if (c->first_person) button(GYRO_X, GYRO_W, c->gyro ? (gyro_settling ? "HOLD STILL" : "GYRO ON") : "GYRO", c->gyro, white);
 
     /* status */
     snprintf(buf, sizeof buf, "%s  %s", b->name, p->swimming ? "SWIMMING" : (p->grounded ? (p->in_water ? "WADING" : "GROUNDED") : (p->thrusting ? "THRUST" : "FLYING")));

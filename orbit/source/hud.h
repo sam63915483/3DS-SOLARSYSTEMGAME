@@ -7,7 +7,8 @@
 #include "camera.h"
 
 void hud_init(void);
-void hud_draw(C3D_RenderTarget *bottom, const world *w, const player *p, const camera *c, float fps);
+/* gyro_settling: the gyro was just switched on and is averaging its zero point; ask to hold still */
+void hud_draw(C3D_RenderTarget *bottom, const world *w, const player *p, const camera *c, float fps, int gyro_settling);
 /* True when a touch at x,y (bottom-screen pixels) lands on the VIEW button. */
 int hud_view_button_hit(int x, int y);
 /* True when a touch lands on the GYRO button, which only exists in first person. */

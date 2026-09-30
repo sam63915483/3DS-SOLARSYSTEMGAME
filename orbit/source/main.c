@@ -16,47 +16,62 @@ static float pad_axis(int v) {
     return a;
 }
 
-/* Motion look. The sensors share one frame: x points right, y out of the screen towards
-   the player, z down the screen towards the hinge (right-handed). Holding the 3DS like a
-   window, tilting it up is a positive rate about x. Turning it about the room's vertical is
-   what we want for yaw whatever angle the console is held at, so that axis comes from the
-   accelerometer's gravity direction, smoothed. Flip GYRO_PITCH_SIGN / GYRO_YAW_SIGN if a
-   direction feels inverted on real hardware. */
+/* Motion look. Sensor frame (matches Citra/Azahar, which mirror the console): x points right,
+   y out of the screen towards the player, z down the screen towards the hinge, right-handed.
+   Held like a window, tilting the top edge back is a positive rate about x (look up) and
+   turning left is a positive rate about z... seen from below, so yaw = -z. Roll is ignored.
+   HID hands back the coefficient as raw units per degree per second (14.375 on hardware and
+   in Azahar), so divide. The raw gyro is uncalibrated: the first half second after switching
+   it on is averaged as the zero point, and the zero keeps tracking slowly while the console is
+   near still. Flip GYRO_PITCH_SIGN / GYRO_YAW_SIGN if a direction feels inverted on hardware. */
 #define GYRO_GAIN        1.0f     /* camera degrees per console degree */
-#define GYRO_DEADZONE    0.6f     /* degrees per second, hides sensor bias while still */
+#define GYRO_DEADZONE    0.5f     /* degrees per second, hides sensor noise while still */
+#define GYRO_MAX_RATE  300.0f     /* degrees per second, clamps glitches */
+#define GYRO_STILL       3.0f     /* below this rate the zero point is allowed to drift along */
+#define GYRO_CALIB_FRAMES 30
 #define GYRO_PITCH_SIGN  1.0f
 #define GYRO_YAW_SIGN    1.0f
 
 static int sensors_on;
-static float gyro_coeff = 1.0f / 14.375f;   /* raw units to degrees per second; asked from HID */
-static v3 up_dev;                            /* room's up in the console frame, smoothed */
+static float gyro_dps_per_raw = 1.0f / 14.375f;
+static int calib_left;      /* frames of the initial hold-still average still to collect */
+static v3 calib_sum, bias;  /* degrees per second */
+
+static int sensors_calibrating(void) { return sensors_on && calib_left > 0; }
 
 static void sensors_set(int on) {
     if (on == sensors_on) return;
     sensors_on = on;
     if (on) {
         HIDUSER_EnableGyroscope();
-        HIDUSER_EnableAccelerometer();
         float k;
-        if (R_SUCCEEDED(HIDUSER_GetGyroscopeRawToDpsCoefficient(&k)) && k > 0) gyro_coeff = k;
-        up_dev = v3_(0, 0, -1);   /* assume upright until the accelerometer says otherwise */
+        if (R_SUCCEEDED(HIDUSER_GetGyroscopeRawToDpsCoefficient(&k)) && k > 0)
+            gyro_dps_per_raw = k > 1.0f ? 1.0f / k : k;   /* raw per dps on hardware; accept either */
+        calib_left = GYRO_CALIB_FRAMES;
+        calib_sum = bias = v3_(0, 0, 0);
     } else {
         HIDUSER_DisableGyroscope();
-        HIDUSER_DisableAccelerometer();
     }
 }
+
+static float deadzone(float v) { return fabsf(v) < GYRO_DEADZONE ? 0 : v; }
+static float clampf(float v, float m) { return v > m ? m : (v < -m ? -m : v); }
 
 static void sensors_read(float *pitch, float *yaw, float dt) {
     /* libctru's angularRate names its fields x, z, y in memory order; read the raw order */
     angularRate r; hidGyroRead(&r);
     const s16 *raw = (const s16 *)&r;
-    v3 w = v3_scale(v3_(raw[0], raw[1], raw[2]), gyro_coeff);   /* deg/s about x, y, z */
-    accelVector a; hidAccelRead(&a);
-    v3 g = v3_(a.x, a.y, a.z);                                   /* reads along gravity */
-    if (v3_len(g) > 100.0f) up_dev = v3_norm(v3_lerp(up_dev, v3_scale(v3_norm(g), -1.0f), ease(6.0f, dt)));
-    float p = w.x, y = v3_dot(w, up_dev);
-    if (fabsf(p) < GYRO_DEADZONE) p = 0;
-    if (fabsf(y) < GYRO_DEADZONE) y = 0;
+    v3 w = v3_scale(v3_(raw[0], raw[1], raw[2]), gyro_dps_per_raw);   /* deg/s about x, y, z */
+    *pitch = *yaw = 0;
+    if (calib_left > 0) {
+        calib_sum = v3_add(calib_sum, w);
+        if (--calib_left == 0) bias = v3_scale(calib_sum, 1.0f / GYRO_CALIB_FRAMES);
+        return;
+    }
+    w = v3_sub(w, bias);
+    if (v3_len(w) < GYRO_STILL) bias = v3_add(bias, v3_scale(w, ease(0.4f, dt)));   /* slow re-zero */
+    float p = clampf(deadzone(w.x), GYRO_MAX_RATE);
+    float y = clampf(deadzone(-w.z), GYRO_MAX_RATE);
     const float to_rad = 3.14159265f / 180.0f * GYRO_GAIN;
     *pitch = GYRO_PITCH_SIGN * p * to_rad;
     *yaw = GYRO_YAW_SIGN * y * to_rad;
@@ -139,7 +154,7 @@ int main(void) {
         /* the 3D pass turns blending off; text and sprites need it back */
         C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA,
                        GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA);
-        hud_draw(bottom, &w, &p, &cam, fps);
+        hud_draw(bottom, &w, &p, &cam, fps, sensors_calibrating());
         C2D_Flush();
         C3D_FrameEnd(0);
     }
