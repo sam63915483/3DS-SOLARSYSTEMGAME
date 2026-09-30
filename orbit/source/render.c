@@ -274,9 +274,10 @@ static void draw_player(const player *p, const camera *c, int fishing, float tim
     }
     draw_limb(&astro_leg, &base, v3_(-0.17f, -0.15f, 0), swing + leg_back, 0);
     draw_limb(&astro_leg, &base, v3_(0.17f, -0.15f, 0), -swing + leg_back, 0);
-    draw_limb(&astro_arm, &base, v3_(-0.40f, 0.40f, 0), arm_swing, arm_splay);
-    if (fishing) draw_limb(&astro_arm, &base, v3_(0.40f, 0.40f, 0), ROD_ARM_SWING, 0);   /* holding the rod out front */
-    else draw_limb(&astro_arm, &base, v3_(0.40f, 0.40f, 0), -arm_swing * (player_on_foot(p) ? 1 : -1), -arm_splay);
+    /* model +x is the figure's left, so the right arm hangs at -0.40 */
+    if (fishing) draw_limb(&astro_arm, &base, v3_(-0.40f, 0.40f, 0), ROD_ARM_SWING, 0);   /* right hand holds the rod out front */
+    else draw_limb(&astro_arm, &base, v3_(-0.40f, 0.40f, 0), arm_swing, arm_splay);
+    draw_limb(&astro_arm, &base, v3_(0.40f, 0.40f, 0), -arm_swing * (player_on_foot(p) ? 1 : -1), -arm_splay);
 
     /* jets: exhaust goes opposite to the thrust. pack plate spans y -0.2..0.44, z -0.39..-0.19;
        the nozzle is at the bottom centre, the tanks top out at y 0.5 */

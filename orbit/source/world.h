@@ -18,6 +18,20 @@
 
 typedef enum { TERRAIN_SUN, TERRAIN_EMBER, TERRAIN_VERDANT, TERRAIN_FROST, TERRAIN_MOON } terrain_kind;
 
+/* A tree, rock or shard cluster standing on a body. Placed once by world_init so the mesh and
+   the player's collision agree. */
+typedef struct {
+    v3 dir;          /* unit direction from the body's centre */
+    int kind;        /* 0 tree, 1 rock, 2 shard cluster */
+    float s;         /* size: trees 0.8..1.6, rocks and shards 0.7..1.4 */
+    float crown;     /* radius of the widest part, keeps neighbours apart */
+    float hit_r;     /* radius the player collides with */
+    float height;    /* height of the solid part above its base */
+    uint32_t k;      /* placement number, seeds the look */
+} prop;
+
+typedef struct { int trees, rocks, shards; uint32_t rock_a, rock_b; float rock_scale; } prop_plan;
+
 typedef struct {
     const char *name;
     float radius;
@@ -38,6 +52,7 @@ typedef struct {
     uint32_t atmo;       /* sky colour 0xRRGGBBAA at full daylight, alpha = strength; 0 for none */
     float atmo_h;        /* atmosphere thickness above the surface */
     float *grid;         /* (rings + 1) * segs heights, filled by world_init */
+    prop *props; int nprops;   /* placed by world_init */
     v3 pos, prev, vel;   /* world position now, last frame, and velocity */
 } body;
 
@@ -70,5 +85,9 @@ float world_sea_radius(const world *w, int i);
 v3 world_grid_dir(const world *w, int i, int ring, int seg);
 /* Vertex colour for a point on body i's surface, 0xRRGGBBAA. */
 uint32_t world_color(const world *w, int i, v3 dir, float raw_h);
+/* How many props of each kind a terrain gets, and its rock colours. */
+prop_plan world_prop_plan(terrain_kind t);
+/* World position of a prop's base (a little below the surface so it never floats). */
+v3 world_prop_base(const world *w, int i, const prop *q);
 
 #endif

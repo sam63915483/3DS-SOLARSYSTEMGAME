@@ -207,14 +207,42 @@ int main(void) {
     run_for(&f, &w, &p, 0, 0.45f);
     CHECK(f.state == FISH_OFF, "rod is off after 0.4 s");
 
-    /* leaving the ground drops the rod immediately */
+    /* a hop inside the atmosphere keeps the rod; flying out of the atmosphere drops it */
     press(&f, &w, &p, 1, 0);
     run_for(&f, &w, &p, 0, 0.6f);
     CHECK(f.state == FISH_HANGING, "rod out again");
-    p.grounded = 0;
+    p.grounded = 0; p.altitude = 5;
+    run_for(&f, &w, &p, 0, 0.2f);
+    CHECK(f.state == FISH_HANGING, "a jump inside the atmosphere keeps the rod out");
+    p.altitude = w.b[BODY_VERDANT].atmo_h + 1;
     run_for(&f, &w, &p, 0, DT);
-    CHECK(f.state == FISH_OFF && !f.bobber_visible, "jumping puts the rod away");
-    p.grounded = 1;
+    CHECK(f.state == FISH_OFF && !f.bobber_visible, "leaving the atmosphere puts the rod away");
+    p.grounded = 1; p.altitude = 0;
+
+    /* props: spaced apart, none in the sea, and solid to the player */
+    {
+        const body *b = &w.b[BODY_VERDANT];
+        CHECK(b->nprops > 300, "Verdant has hundreds of props");
+        int close = 0;
+        for (int i = 0; i < b->nprops; i++)
+            for (int j = i + 1; j < b->nprops; j++)
+                if (v3_len(v3_sub(b->props[i].dir, b->props[j].dir)) * b->radius < (b->props[i].crown + b->props[j].crown) * 0.8f) close++;
+        CHECK(close == 0, "no two props stand closer than most of their crowns' width");
+        /* walk into the first tree from a little way off: the player is held outside it */
+        const prop *q = NULL;
+        for (int i = 0; i < b->nprops && !q; i++) if (b->props[i].kind == 0) q = &b->props[i];
+        CHECK(q != NULL, "found a tree");
+        player pt; memset(&pt, 0, sizeof pt);
+        pt.dom = BODY_VERDANT; pt.up = pt.body_up = q->dir;
+        v3 side = v3_any_perp(q->dir);
+        pt.pos = v3_add(world_prop_base(&w, BODY_VERDANT, q), v3_add(v3_scale(q->dir, 0.3f + PLAYER_HALF_HEIGHT), v3_scale(side, 3.0f)));
+        pt.grounded = 1; pt.facing = pt.body_fwd = v3_scale(side, -1.0f);
+        player_input pin; memset(&pin, 0, sizeof pin);
+        pin.cam_forward = v3_scale(side, -1.0f); pin.view_forward = pin.cam_forward; pin.view_up = q->dir; pin.my = 1;
+        for (int i = 0; i < 180; i++) player_update(&pt, &w, &pin, DT);   /* 3 s of walking at the trunk */
+        float gap = v3_len(v3_tangent(v3_sub(pt.pos, world_prop_base(&w, BODY_VERDANT, q)), q->dir));
+        CHECK(gap > q->hit_r + 0.3f, "walking into a tree stops at its trunk");
+    }
 
     /* fish mesh */
     {

@@ -235,8 +235,9 @@ int main(void) {
         CHECK(!p.grounded, "airborne after the jump");
         CHECK(worst < 0.15f, "the body never turns more than about 8 degrees in one frame at takeoff");
         CHECK(min_upright > 0.8f, "the body stays close to upright through the takeoff");
-        CHECK(fabsf(v3_dot(c.view, c.up)) < 0.15f, "the view has eased back to level after takeoff");
-        CHECK(v3_dot(p.body_fwd, c.view) > 0.9f, "once level the body faces along the view");
+        CHECK(player_locked(&p, &w), "a hop inside the atmosphere keeps the look locked to the planet");
+        CHECK(v3_dot(c.view, c.up) < -0.3f, "so the view keeps its downward ground pitch through the hop");
+        CHECK(fabsf(v3_dot(v3_cross(c.view, c.view_up), c.up)) < 0.05f, "and the horizon stays level");
         /* the landing must be just as smooth */
         worst = 0;
         for (int f = 0; f < 240 && !p.grounded; f++) {
@@ -255,8 +256,12 @@ int main(void) {
     in.jump_pressed = 1; in.thrust_up = 1; in.view_up = p.up;   /* constant thrust direction for the loop tests */
     world_update(&w, DT); player_update(&p, &w, &in, DT);
     in.jump_pressed = 0;
-    /* let the takeoff levelling finish before testing free look */
+    CHECK(player_locked(&p, &w), "just off the ground the look is still locked to the planet");
+    /* free look only unlocks above the atmosphere: lift the player straight out of it, then let
+       the levelling finish before testing */
+    p.pos = v3_add(p.pos, v3_scale(p.up, w.b[p.dom].atmo_h + 20.0f));
     for (int f = 0; f < 45; f++) { world_update(&w, DT); player_update(&p, &w, &in, DT); camera_update(&c, &w, &p, &cin, DT); }
+    CHECK(!player_locked(&p, &w), "above the atmosphere free look unlocks");
     cin.turn = 0; cin.look_y = 1.0f;
     v3 start_view = c.view;
     int looked_back = 0;

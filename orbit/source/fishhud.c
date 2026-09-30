@@ -4,7 +4,7 @@
 
 #define BAR_W 120
 #define BAR_H 5
-#define BAR_Y 150
+#define BAR_Y 205
 #define CX 200
 
 static float bar_a;   /* bar fade 0..1 */
@@ -19,9 +19,9 @@ void fishhud_draw(C3D_RenderTarget *top, const fishing *f, float dt) {
     if (bar_a > 0.02f) {
         float ten = f->fight.tension / 100.0f;
         if (ten > 1) ten = 1;
-        float hot = ten < 0.75f ? 0 : (ten - 0.75f) / 0.25f;   /* orange to red past 3/4 */
-        int r = (int)(255 + (240 - 255) * hot), g = (int)(192 + (66 - 192) * hot), b = (int)(64 + (46 - 64) * hot);
-        u32 fill = rgba(r, g, b, bar_a), brk = hot > 0 ? rgba(240, 66, 46, bar_a) : rgba(255, 192, 64, bar_a);
+        float hot = ten < 0.5f ? 0 : (ten - 0.5f) / 0.5f;   /* orange, reddening from half, vivid red at full */
+        int r = 255, g = (int)(192 + (20 - 192) * hot), b = (int)(64 + (12 - 64) * hot);
+        u32 fill = rgba(r, g, b, bar_a), brk = hot > 0.5f ? rgba(255, 40, 24, bar_a) : rgba(255, 192, 64, bar_a);
         float x0 = CX - BAR_W / 2 + sinf(f->time * 46.0f) * 3.2f * f->bar_shake, y0 = BAR_Y;
         rect(x0, y0, BAR_W, BAR_H, rgba(0, 0, 0, 0.42f * bar_a));
         rect(x0, y0, BAR_W * ten, BAR_H, fill);
@@ -35,6 +35,10 @@ void fishhud_draw(C3D_RenderTarget *top, const fishing *f, float dt) {
     if (f->state == FISH_STRIKE && fmodf(f->time, 0.25f) < 0.125f) {
         const char *s = "HOOK!  TAP R";
         font_draw(s, CX - font_width(s, 2) / 2, BAR_Y - 4, 2, rgba(255, 192, 64, 1));
+    }
+    if (f->lost_t > 0) {   /* solid for a second, then fades over the next */
+        float a = f->lost_t > 1.0f ? 1.0f : f->lost_t;
+        font_draw(f->lost_msg, CX - font_width(f->lost_msg, 1.5f) / 2, BAR_Y - 22, 1.5f, rgba(255, 60, 40, a));
     }
     if (f->banner_t > 0) {
         float a = f->banner_t < 0.5f ? f->banner_t / 0.5f : 1.0f;

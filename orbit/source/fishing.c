@@ -9,9 +9,10 @@
 #define LEASH_GROW     1.4f
 #define CHARGE_TIME    2.0f
 #define DRAW_TIME      0.15f
-#define WIND_TIME      0.22f
-#define CAST_SPEED_MIN  6.0f   /* tap: about 5 units on Verdant from a 2.2-high tip */
-#define CAST_SPEED_MAX 19.0f   /* full hold: about 14.5 */
+#define DRAW_ANGLE    50.0f    /* degrees the rod whips back on any press */
+#define CHARGE_ANGLE  60.0f    /* degrees more it eases back over a full charge */
+#define CAST_SPEED_MIN  6.5f   /* tap: about 5 units on Verdant */
+#define CAST_SPEED_MAX 20.0f   /* full hold: about 15 */
 #define REEL_SPEED     6.6f
 #define REEL_STEP_MAX 17.0f
 #define TAUT_ON       (1.0f / 0.45f)
@@ -26,7 +27,7 @@
 
 static const float STRIKE_WINDOW[3] = { 3.0f, 2.0f, 1.5f };
 static const float FISH_SCALE[3] = { 0.6f, 1.0f, 1.5f };
-static const float WEIGHT_LO[3] = { 0.4f, 1.5f, 4.0f }, WEIGHT_HI[3] = { 1.5f, 4.0f, 12.0f };
+static const float WEIGHT_LO[3] = { 1.0f, 3.0f, 9.0f }, WEIGHT_HI[3] = { 3.0f, 9.0f, 26.0f };   /* pounds */
 static const char *TIER_NAME[3] = { "COMMON", "UNCOMMON", "RARE" };
 
 const char *fishing_tier_name(int tier) { return TIER_NAME[tier < 0 ? 0 : (tier > 2 ? 2 : tier)]; }
@@ -109,6 +110,30 @@ static void start_retreat(fishing *f, const player *p) {
     f->retreat_dir = v3_scale(toward_player(p, f->bobber), -1.0f);
     f->wander = f->wander_target = v3_(0, 0, 0);
     enter(f, FISH_RETREAT);
+}
+
+static void lost(fishing *f, const char *msg) {
+    snprintf(f->lost_msg, sizeof f->lost_msg, "%s", msg);
+    f->lost_t = 2.0f;
+}
+
+/* The bobber dangling under the tip on a leash: a stiff damped spring toward a point one leash
+   below the tip, and a hard rope so it can never be further than the leash. Runs while hanging,
+   charging and casting, so the cast flicks it off the swinging rod. */
+static void hang_step(fishing *f, v3 tip, float dt) {
+    v3 target = v3_sub(tip, v3_scale(f->bobber_up, f->leash));
+    v3 acc = v3_sub(v3_scale(v3_sub(target, f->bobber), 45.0f), v3_scale(f->bobber_vel, 7.0f));
+    f->bobber_vel = v3_add(f->bobber_vel, v3_scale(acc, dt));
+    float sp = v3_len(f->bobber_vel);
+    if (sp > 20) f->bobber_vel = v3_scale(f->bobber_vel, 20.0f / sp);
+    f->bobber = v3_add(f->bobber, v3_scale(f->bobber_vel, dt));
+    v3 d = v3_sub(f->bobber, tip); float l = v3_len(d);
+    if (l > f->leash && l > 1e-5f) {
+        v3 n = v3_scale(d, 1.0f / l);
+        f->bobber = v3_add(tip, v3_scale(n, f->leash));
+        float out = v3_dot(f->bobber_vel, n);
+        if (out > 0) f->bobber_vel = v3_sub(f->bobber_vel, v3_scale(n, out));
+    }
 }
 
 static void start_towing(fishing *f, int with_fish) {
@@ -232,11 +257,14 @@ void fishing_update(fishing *f, const world *w, const player *p, const fishing_i
     f->hand = in->hand; f->hand_fwd = in->hand_fwd; f->hand_up = in->hand_up;
     f->time += dt;
     if (f->banner_t > 0) f->banner_t -= dt;
+    if (f->lost_t > 0) f->lost_t -= dt;
     f->bar_shake -= 3.5f * dt; if (f->bar_shake < 0) f->bar_shake = 0;
     f->splash_t += dt;
 
-    int on_ground = p->grounded && !p->swimming;
-    if (f->state != FISH_OFF && !on_ground) {   /* jumped, fell in, blasted off: rod away at once */
+    /* the rod stays out on the ground and while hopping about inside the atmosphere; it goes
+       away when you fall in the sea or fly out into free look, where R rolls instead */
+    int on_ground = player_locked(p, w) && !p->swimming;
+    if (f->state != FISH_OFF && !on_ground) {
         clear_tackle(f);
         f->state = FISH_OFF;
         return;
@@ -288,52 +316,41 @@ void fishing_update(fishing *f, const world *w, const player *p, const fishing_i
         if (f->t >= EQUIP_TIME) { f->leash = 0.02f; f->bobber_vel = v3_(0, 0, 0); enter(f, FISH_HANGING); }
         break;
 
-    case FISH_HANGING: {
-        /* the leash pays out to its resting length; the bobber swings on a stiff damped spring
-           toward a point one leash below the tip and can never be further than the leash */
+    case FISH_HANGING:
+        /* the leash pays out to its resting length while the bobber dangles */
         f->leash = f->leash > HANG_LEASH ? toward(f->leash, HANG_LEASH, REEL_SPEED * dt) : toward(f->leash, HANG_LEASH, LEASH_GROW * dt);
-        v3 target = v3_sub(tip, v3_scale(f->bobber_up, f->leash));
-        v3 acc = v3_sub(v3_scale(v3_sub(target, f->bobber), 45.0f), v3_scale(f->bobber_vel, 7.0f));
-        f->bobber_vel = v3_add(f->bobber_vel, v3_scale(acc, dt));
-        float sp = v3_len(f->bobber_vel);
-        if (sp > 20) f->bobber_vel = v3_scale(f->bobber_vel, 20.0f / sp);
-        f->bobber = v3_add(f->bobber, v3_scale(f->bobber_vel, dt));
-        v3 d = v3_sub(f->bobber, tip); float l = v3_len(d);
-        if (l > f->leash && l > 1e-5f) {
-            v3 n = v3_scale(d, 1.0f / l);
-            f->bobber = v3_add(tip, v3_scale(n, f->leash));
-            float out = v3_dot(f->bobber_vel, n);
-            if (out > 0) f->bobber_vel = v3_sub(f->bobber_vel, v3_scale(n, out));
-        }
+        hang_step(f, tip, dt);
         f->line_visible = 1;
         taut_for_line = 0.6f;
         if (in->r_pressed) {
-            f->glue_off = v3_sub(f->bobber, tip);
             f->charge = 0; f->draw_t = 0; f->tw_len = 0;
             enter(f, FISH_CHARGING);
         }
         break;
-    }
 
     case FISH_CHARGING:
+        /* the rod whips back, then eases further back the longer R is held; the bobber keeps
+           swinging under the tip the whole time */
         f->charge = clamp01(f->t / CHARGE_TIME);
         f->draw_t = clamp01(f->draw_t + dt / DRAW_TIME);
-        f->rod_pose = -(50.0f * f->draw_t + 18.0f * f->charge);
-        f->bobber = v3_add(tip, v3_scale(f->glue_off, 1.0f - smoothstep(f->t / WIND_TIME)));
-        f->line_visible = 0;
+        f->rod_pose = -(DRAW_ANGLE * f->draw_t + CHARGE_ANGLE * f->charge);
+        hang_step(f, tip_of(f), dt);
+        f->line_visible = 1;
+        taut_for_line = 0.6f;
         if (!in->r_down) {
             f->cast_draw = DRAW_TIME * (1.0f - f->draw_t);
             f->cast_from = f->rod_pose;
-            f->cast_back = -(50.0f + 18.0f * f->charge);
+            f->cast_back = -(DRAW_ANGLE + CHARGE_ANGLE * f->charge);
             enter(f, FISH_CASTING);
         }
         break;
 
     case FISH_CASTING: {
-        /* finish the draw, hold, snap forward (bobber released at 70 percent), settle */
+        /* finish the draw, hold, snap forward and flick the bobber off the leash at 70 percent
+           of the snap, settle */
         float t0 = f->cast_draw, t1 = t0 + 0.02f, t2 = t1 + 0.1f;
-        f->bobber = tip;
-        f->line_visible = 0;
+        f->line_visible = 1;
+        taut_for_line = 0.6f;
         if (f->t < t0) f->rod_pose = lerpf(f->cast_from, f->cast_back, f->t / t0);
         else if (f->t < t1) f->rod_pose = f->cast_back;
         else {
@@ -341,15 +358,18 @@ void fishing_update(fishing *f, const world *w, const player *p, const fishing_i
             f->rod_pose = lerpf(f->cast_back, 5.0f, smoothstep(k));
             if (k >= 0.7f) {
                 float speed = sqrtf(lerpf(CAST_SPEED_MIN * CAST_SPEED_MIN, CAST_SPEED_MAX * CAST_SPEED_MAX, f->charge));
-                f->bobber = tip_of(f);
-                f->bobber_vel = v3_add(p->vel, v3_scale(v3_norm(in->cast_dir), speed));
+                /* launched from wherever the leash has swung it, along the look, with a little
+                   of the swing kept for flavour */
+                f->bobber_vel = v3_add(v3_add(p->vel, v3_scale(v3_norm(in->cast_dir), speed)), v3_scale(f->bobber_vel, 0.2f));
                 f->r_released_since_cast = 0;
                 f->retrieve_taut = 0;
                 f->lost_bite_bonus = 1;
                 tween(f, 0, 0.13f);
                 enter(f, FISH_FLIGHT);
+                break;
             }
         }
+        hang_step(f, tip_of(f), dt);
         break;
     }
 
@@ -482,8 +502,8 @@ void fishing_update(fishing *f, const world *w, const player *p, const fishing_i
             fish_on_float(f, p, vig, running, dt);
             if (f->hookset_pending && (g->taut >= 0.65f || f->t >= 1.5f)) { f->rod_haul = 25; f->hookset_pending = 0; }
             if (g->outcome == FIGHT_LANDED) { start_towing(f, 1); break; }
-            if (g->outcome == FIGHT_SNAPPED) { f->recoil_t = 0; f->hookset_pending = 0; start_retreat(f, p); break; }
-            if (g->outcome == FIGHT_SLIPPED) { f->lost_bite_bonus = 1.3f; f->hookset_pending = 0; start_retreat(f, p); break; }
+            if (g->outcome == FIGHT_SNAPPED) { f->recoil_t = 0; f->hookset_pending = 0; lost(f, "FISH BROKE OFF!"); start_retreat(f, p); break; }
+            if (g->outcome == FIGHT_SLIPPED) { f->lost_bite_bonus = 1.3f; f->hookset_pending = 0; lost(f, "FISH GOT AWAY!"); start_retreat(f, p); break; }
         }
 
         /* place the bobber: seated on the anchor, dipped or submerged, plus wander and jitter */
@@ -508,7 +528,7 @@ void fishing_update(fishing *f, const world *w, const player *p, const fishing_i
             if (f->with_fish) {
                 f->caught++;
                 float kg = lerpf(WEIGHT_LO[f->tier], WEIGHT_HI[f->tier], f->weight_frac);
-                snprintf(f->banner, sizeof f->banner, "CAUGHT! %s %.1f KG", TIER_NAME[f->tier], kg);
+                snprintf(f->banner, sizeof f->banner, "CAUGHT! %s %.1f LB", TIER_NAME[f->tier], kg);
                 f->banner_t = BANNER_TIME;
                 f->fish_visible = 0;
                 f->with_fish = 0;

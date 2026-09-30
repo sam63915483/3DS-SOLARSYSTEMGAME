@@ -72,9 +72,9 @@ void camera_init(camera *c, const player *p) {
 void camera_update(camera *c, const world *w, const player *p, const camera_input *in, float dt) {
     c->up = v3_norm(v3_lerp(c->up, p->up, ease(4.0f, dt)));
 
-    if (player_on_foot(p)) {
+    if (player_locked(p, w)) {
         if (!c->was_grounded) {
-            /* just landed: keep looking the way we were flying */
+            /* just landed or dropped back into the atmosphere: keep looking the way we were flying */
             v3 h = v3_tangent(c->view, c->up);
             if (v3_len(h) > 1e-3f) c->fwd = v3_norm(h);
             c->ground_pitch = 0;
@@ -103,7 +103,7 @@ void camera_update(camera *c, const world *w, const player *p, const camera_inpu
         c->view_up = v3_lerp(c->view_up, tu, k);
         orthonormalize(c);
     } else {
-        if (c->was_grounded) c->level_t = LEVEL_TIME;   /* just took off */
+        if (c->was_grounded) c->level_t = LEVEL_TIME;   /* just left the ground or the atmosphere */
         if (c->level_t > 0) {
             /* ease the look back to level so the body can stay upright through the jump;
                the pull fades out as the pad takes over */
@@ -132,6 +132,6 @@ void camera_update(camera *c, const world *w, const player *p, const camera_inpu
         v3 h = v3_tangent(c->view, c->up);
         if (v3_len(h) > 1e-3f) c->fwd = v3_norm(h);
     }
-    c->was_grounded = player_on_foot(p);
+    c->was_grounded = player_locked(p, w);
     place(c, w, p, dt);
 }

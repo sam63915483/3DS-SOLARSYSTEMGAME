@@ -37,7 +37,6 @@ typedef struct {
     float bob_off;            /* bobber height above the anchor: 0 seated, negative submerged */
     v3 wander, wander_target; float wander_t;
     float tug_t, tug_phase;
-    v3 glue_off;              /* CHARGING: the bobber's offset from the tip, shrinking to zero */
     int bobber_visible, line_visible;
     float line_taut;          /* 0..1 for the line's sag */
     float leash;              /* hanging: length of line below the tip */
@@ -60,6 +59,8 @@ typedef struct {
     float bar_shake;          /* HUD run tell, decays 3.5/s */
     float banner_t;           /* CAUGHT banner seconds left */
     char banner[32];
+    float lost_t;             /* "FISH BROKE OFF!" seconds left: solid above 1, fading below */
+    char lost_msg[24];
     int caught;               /* tally */
     v3 splash_pos; float splash_t;
     uint32_t rng;

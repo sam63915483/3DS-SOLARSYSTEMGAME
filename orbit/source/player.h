@@ -44,5 +44,12 @@ void player_spawn(player *p, const world *w, int body);
 void player_update(player *p, const world *w, const player_input *in, float dt);
 /* True when the player should use ground-style controls and camera. */
 static inline int player_on_foot(const player *p) { return p->grounded || p->swimming; }
+/* True while the orientation stays locked to the planet: on foot, or airborne inside a
+   planet's atmosphere. Free look (and L/R roll) only unlocks above the atmosphere; airless moons
+   unlock the moment you leave the ground. */
+static inline int player_locked(const player *p, const world *w) {
+    const body *b = &w->b[p->dom];
+    return player_on_foot(p) || (b->atmo && p->altitude < b->atmo_h);
+}
 
 #endif

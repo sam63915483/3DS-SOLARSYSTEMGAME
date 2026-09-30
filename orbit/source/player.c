@@ -5,7 +5,8 @@
 #define WADE_FACTOR  0.55f
 #define SWIM_SPEED   3.5f
 #define JUMP_SPEED   9.0f
-#define THRUST      28.0f
+#define THRUST      18.7f   /* was 28; 1.5x weaker per the user */
+#define PLAYER_RADIUS 0.35f /* for bumping into trees and rocks */
 #define BRAKE_RATE   2.5f
 #define MAX_SPEED  150.0f
 #define GROUND_SNAP  0.5f
@@ -44,6 +45,31 @@ void player_spawn(player *p, const world *w, int bi) {
     p->speed = 0;
     p->altitude = 0;
     p->anim = 0;
+}
+
+/* Trees, rocks and shards are solid cylinders: push the player out sideways and stop the
+   velocity into them. Only props almost directly under the player are looked at. */
+static void collide_props(player *p, const world *w) {
+    const body *b = &w->b[p->dom];
+    if (!b->nprops) return;
+    v3 rel0 = v3_sub(p->pos, b->pos);
+    float R = v3_len(rel0);
+    if (R > b->radius + b->amp + 20.0f) return;
+    v3 pu = v3_scale(rel0, 1.0f / R);
+    for (int i = 0; i < b->nprops; i++) {
+        const prop *q = &b->props[i];
+        if (v3_dot(q->dir, pu) < 0.995f) continue;   /* more than about 6 degrees away */
+        v3 rel = v3_sub(p->pos, world_prop_base(w, p->dom, q));
+        float h = v3_dot(rel, q->dir);
+        if (h < -0.5f || h > q->height + PLAYER_HALF_HEIGHT) continue;
+        v3 horiz = v3_tangent(rel, q->dir);
+        float d = v3_len(horiz), min = q->hit_r + PLAYER_RADIUS;
+        if (d >= min) continue;
+        v3 n = d > 1e-4f ? v3_scale(horiz, 1.0f / d) : v3_any_perp(q->dir);
+        p->pos = v3_add(p->pos, v3_scale(n, min - d));
+        float into = v3_dot(p->vel, n);
+        if (into < 0) p->vel = v3_sub(p->vel, v3_scale(n, into));
+    }
 }
 
 static void switch_frame(player *p, const world *w, int to) {
@@ -136,6 +162,7 @@ void player_update(player *p, const world *w, const player_input *in, float dt) 
     float sp = v3_len(p->vel), cap = sp0 > MAX_SPEED ? sp0 : MAX_SPEED;
     if (sp > cap) p->vel = v3_scale(p->vel, cap / sp);
     p->pos = v3_add(p->pos, v3_scale(p->vel, dt));
+    collide_props(p, w);
 
     /* surface contact */
     int touching = 0;
@@ -174,7 +201,7 @@ void player_update(player *p, const world *w, const player_input *in, float dt) 
     /* the body eases towards its target orientation rather than jumping to it */
     {
         v3 tu = p->up, tf = p->facing;
-        if (!player_on_foot(p)) {
+        if (!player_locked(p, w)) {   /* free flight: the body follows the view like a ship */
             if (v3_len(in->view_up) > 1e-4f) tu = v3_norm(in->view_up);
             if (v3_len(in->view_forward) > 1e-4f) tf = v3_norm(in->view_forward);
         }

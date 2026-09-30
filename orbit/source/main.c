@@ -29,8 +29,8 @@ static void rod_hand(const player *p, const camera *c, v3 *butt, v3 *fwd, v3 *up
     } else {
         v3 u = p->body_up, f = v3_tangent(p->body_fwd, u);
         f = v3_len(f) < 1e-3f ? v3_any_perp(u) : v3_norm(f);
-        v3 right = v3_cross(u, f);
-        /* the raised right arm: shoulder (0.40, 0.40) plus 0.74 of arm swung forward */
+        v3 right = v3_cross(f, u);   /* the figure's right (model -x) */
+        /* the raised right arm: shoulder (0.40 out, 0.40 up) plus 0.74 of arm swung forward */
         *butt = v3_add(v3_add(v3_add(p->pos, v3_scale(right, 0.40f)), v3_scale(u, 0.20f)), v3_scale(f, 0.70f));
         *fwd = f; *up = u;
     }
@@ -163,8 +163,9 @@ int main(void) {
             in.jump_pressed = (kDown & KEY_X) != 0;
             if (fishing_active(&fish)) in.face = cam.fwd;   /* square up to the cast */
         } else {
-            /* flight: the pad looks around freely, L/R roll, buttons thrust */
-            cin.turn = ((kHeld & KEY_R) ? 1.0f : 0.0f) - ((kHeld & KEY_L) ? 1.0f : 0.0f);
+            /* flight: the pad looks around, buttons thrust; L/R roll only once free of the
+               atmosphere (inside it the view stays upright and R belongs to the fishing rod) */
+            if (!player_locked(&p, &w)) cin.turn = ((kHeld & KEY_R) ? 1.0f : 0.0f) - ((kHeld & KEY_L) ? 1.0f : 0.0f);
             cin.look_x = px; cin.look_y = py;
             in.thrust_up = (kHeld & KEY_X) != 0;
             in.thrust_fwd = (kHeld & KEY_A) != 0;

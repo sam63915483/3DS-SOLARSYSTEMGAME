@@ -18,6 +18,8 @@ static void body_place(world *w, int i, float t) {
     b->vel = v3_add(par->vel, lvel);
 }
 
+static void place_props(world *w, int bi);
+
 v3 world_grid_dir(const world *w, int i, int ring, int seg) {
     const body *b = &w->b[i];
     float th = (float)M_PI * ring / b->rings, ph = 2.0f * (float)M_PI * seg / b->segs;
@@ -70,6 +72,89 @@ void world_init(world *w) {
         for (int s = 1; s < b->segs; s++) {
             b->grid[s] = b->grid[0];
             b->grid[b->rings * b->segs + s] = b->grid[b->rings * b->segs];
+        }
+        place_props(w, i);
+    }
+}
+
+/* ---- props ---- */
+
+prop_plan world_prop_plan(terrain_kind t) {
+    prop_plan p = { 0, 0, 0, 0x787068FF, 0x625A50FF, 1.0f };
+    switch (t) {
+    case TERRAIN_VERDANT: p.trees = 400; p.rocks = 110; p.rock_a = 0x8A8278FF; p.rock_b = 0x6E665CFF; break;
+    case TERRAIN_EMBER:   p.trees = 150; p.rocks = 170; p.rock_a = 0x6E3524FF; p.rock_b = 0x4E2418FF; p.rock_scale = 1.6f; break;
+    case TERRAIN_FROST:   p.trees = 200; p.rocks = 60; p.shards = 90; p.rock_a = 0xB4C2D2FF; p.rock_b = 0x94A6BAFF; break;
+    case TERRAIN_MOON:    p.rocks = 70; p.rock_a = 0x9A9AA0FF; p.rock_b = 0x6C6C74FF; p.rock_scale = 0.9f; break;
+    default: break;
+    }
+    return p;
+}
+
+v3 world_prop_base(const world *w, int i, const prop *q) {
+    return v3_add(w->b[i].pos, v3_scale(q->dir, world_surface(w, i, q->dir) - 0.3f));
+}
+
+/* Random unit direction number k for a kind, or a grove-clustered one for trees. */
+static int pick_dir(const body *b, const v3 *grove, int k, int kind, uint32_t seed, v3 *out) {
+    if (kind == 0 && noise_hashf(k, 20, kind, seed) < 0.75f) {
+        v3 g = grove[noise_hash(k, 21, kind, seed) % 40];
+        v3 t1 = v3_any_perp(g), t2 = v3_cross(g, t1);
+        float spread = 32.0f / b->radius;   /* about 32 units */
+        *out = v3_norm(v3_add(g, v3_add(v3_scale(t1, (noise_hashf(k, 22, kind, seed) - 0.5f) * 2 * spread),
+                                        v3_scale(t2, (noise_hashf(k, 23, kind, seed) - 0.5f) * 2 * spread))));
+        return 1;
+    }
+    v3 d = v3_(noise_hashf(k, 0, kind, seed) * 2 - 1, noise_hashf(k, 1, kind, seed) * 2 - 1, noise_hashf(k, 2, kind, seed) * 2 - 1);
+    float l = v3_len(d);
+    if (l > 1 || l < 0.1f) return 0;
+    *out = v3_scale(d, 1.0f / l);
+    return 1;
+}
+
+/* Scatters the body's trees, rocks and shards: trees in groves, nothing on beaches or peaks,
+   and no two props closer than most of their crowns' width so they never grow into each other. */
+static void place_props(world *w, int bi) {
+    body *b = &w->b[bi];
+    prop_plan plan = world_prop_plan(b->terrain);
+    int want[3] = { plan.trees, plan.rocks, plan.shards };
+    int total = want[0] + want[1] + want[2];
+    b->props = NULL; b->nprops = 0;
+    if (!total) return;
+    b->props = malloc(sizeof(prop) * total);
+    uint32_t seed = b->seed * 7919u + 3u;
+    v3 grove[40];
+    for (int g = 0; g < 40; g++) {
+        v3 d = v3_(noise_hashf(g, 7, 9, seed) * 2 - 1, noise_hashf(g, 8, 9, seed) * 2 - 1, noise_hashf(g, 9, 9, seed) * 2 - 1);
+        grove[g] = v3_len(d) > 0.05f ? v3_norm(d) : v3_(0, 1, 0);
+    }
+    float lo = b->sea_level > -b->amp ? b->sea_level : -b->amp;   /* the lowest land */
+    int k = 0;
+    for (int kind = 0; kind < 3; kind++) {
+        int placed = 0, guard = 0;
+        while (placed < want[kind] && guard++ < 60000) {
+            k++;
+            v3 dir;
+            if (!pick_dir(b, grove, k, kind, seed, &dir)) continue;
+            float raw = world_height_raw(w, bi, dir);
+            float lf = b->amp > 0 ? (raw - lo) / (b->amp - lo) : 0;   /* 0 at the lowest land, 1 at the peaks */
+            if (kind == 0 && (lf < 0.08f || lf > 0.75f)) continue;   /* trees: not beach, not peaks */
+            if (kind != 0 && lf < 0.02f) continue;                  /* rocks and shards: dry land or ice */
+            prop q;
+            q.dir = dir; q.kind = kind; q.k = (uint32_t)k;
+            q.s = kind == 0 ? 0.8f + noise_hashf(k, 4, kind, seed) * 0.8f : 0.7f + noise_hashf(k, 4, kind, seed) * 0.7f;
+            if (kind == 0)      { q.crown = 3.2f * q.s; q.hit_r = 0.45f * q.s; q.height = 8.0f * q.s; }
+            else if (kind == 1) { float r = q.s * plan.rock_scale; q.crown = 1.4f * r; q.hit_r = 1.0f * r; q.height = 1.3f * r; }
+            else                { q.crown = 1.6f * q.s; q.hit_r = 1.2f * q.s; q.height = 3.0f * q.s; }
+            int crowded = 0;
+            for (int j = 0; j < b->nprops && !crowded; j++) {
+                const prop *o = &b->props[j];
+                float gap = v3_len(v3_sub(dir, o->dir)) * b->radius;   /* chord, close enough to arc here */
+                if (gap < (q.crown + o->crown) * 0.8f) crowded = 1;
+            }
+            if (crowded) continue;
+            b->props[b->nprops++] = q;
+            placed++;
         }
     }
 }
@@ -152,7 +237,15 @@ float world_height_raw(const world *w, int i, v3 dir) {
     v3 p = v3_add(v3_scale(dir, b->freq), v3_(7.3f, 1.9f, 4.1f));
     float n = noise_fbm(p, 3, b->seed);
     if (b->terrain == TERRAIN_MOON) return (n - 0.5f) * 0.6f * b->amp + moon_craters(dir, b->seed, b->amp);
-    return (n - 0.5f) * 2.0f * b->amp;
+    float h = (n - 0.5f) * 2.0f * b->amp;
+    if (b->liquid && h < b->sea_level) {
+        /* deepen the seas: the shoreline slope is untouched, but past 3 units down the bed
+           drops away 2.5x faster, so the water is deep enough to fish in */
+        float d = h - b->sea_level, k = -d / 3.0f;
+        if (k > 1) k = 1;
+        h = b->sea_level + d * (1.0f + 1.5f * k);
+    }
+    return h;
 }
 
 float world_grid_height(const world *w, int i, int ring, int seg) {

@@ -219,78 +219,29 @@ static void emit_spruce(mesh *m, v3 base, v3 t1, v3 up, v3 t2, float s, uint32_t
     emit_cone_open(m, v3_add(base, v3_scale(up, 7.1f * s)), t1, up, t2, 0.9f * s * cs, 2.0f * s, ca, cb);
 }
 
-typedef struct { int trees, rocks, shards; uint32_t rock_a, rock_b; float rock_scale; } prop_plan;
-
-static prop_plan plan_for(terrain_kind t) {
-    prop_plan p = { 0, 0, 0, 0x787068FF, 0x625A50FF, 1.0f };
-    switch (t) {
-    case TERRAIN_VERDANT: p.trees = 400; p.rocks = 110; p.rock_a = 0x8A8278FF; p.rock_b = 0x6E665CFF; break;
-    case TERRAIN_EMBER:   p.trees = 150; p.rocks = 170; p.rock_a = 0x6E3524FF; p.rock_b = 0x4E2418FF; p.rock_scale = 1.6f; break;
-    case TERRAIN_FROST:   p.trees = 200; p.rocks = 60; p.shards = 90; p.rock_a = 0xB4C2D2FF; p.rock_b = 0x94A6BAFF; break;
-    case TERRAIN_MOON:    p.rocks = 70; p.rock_a = 0x9A9AA0FF; p.rock_b = 0x6C6C74FF; p.rock_scale = 0.9f; break;
-    default: break;
-    }
-    return p;
-}
-
 static int octant_of(v3 d) { return (d.x < 0 ? 1 : 0) | (d.y < 0 ? 2 : 0) | (d.z < 0 ? 4 : 0); }
-
-/* Random unit direction number k for a kind, or a grove-clustered one for trees. */
-static int pick_dir(const body *b, const v3 *grove, int k, int kind, uint32_t seed, v3 *out) {
-    if (kind == 0 && noise_hashf(k, 20, kind, seed) < 0.75f) {
-        v3 g = grove[noise_hash(k, 21, kind, seed) % 40];
-        v3 t1 = v3_any_perp(g), t2 = v3_cross(g, t1);
-        float spread = 32.0f / b->radius;   /* about 32 units */
-        *out = v3_norm(v3_add(g, v3_add(v3_scale(t1, (noise_hashf(k, 22, kind, seed) - 0.5f) * 2 * spread),
-                                        v3_scale(t2, (noise_hashf(k, 23, kind, seed) - 0.5f) * 2 * spread))));
-        return 1;
-    }
-    v3 d = v3_(noise_hashf(k, 0, kind, seed) * 2 - 1, noise_hashf(k, 1, kind, seed) * 2 - 1, noise_hashf(k, 2, kind, seed) * 2 - 1);
-    float l = v3_len(d);
-    if (l > 1 || l < 0.1f) return 0;
-    *out = v3_scale(d, 1.0f / l);
-    return 1;
-}
 
 mesh mesh_props(const world *w, int bi, int octant) {
     const body *b = &w->b[bi];
-    prop_plan plan = plan_for(b->terrain);
+    prop_plan plan = world_prop_plan(b->terrain);
     mesh m = { 0, 0, 0, 0 };
     int cap = plan.trees * 180 + plan.rocks * 130 + plan.shards * 80;
-    if (cap == 0) return m;
+    if (cap == 0 || !b->nprops) return m;
     m.v = calloc(cap, sizeof(vertex));
-
-    int want[3] = { plan.trees, plan.rocks, plan.shards };
     uint32_t seed = b->seed * 7919u + 3u;
-    int k = 0;
-    /* trees grow in groves: pick a few centres, then scatter most trees around them */
-    v3 grove[40];
-    for (int g = 0; g < 40; g++) {
-        v3 d = v3_(noise_hashf(g, 7, 9, seed) * 2 - 1, noise_hashf(g, 8, 9, seed) * 2 - 1, noise_hashf(g, 9, 9, seed) * 2 - 1);
-        grove[g] = v3_len(d) > 0.05f ? v3_norm(d) : v3_(0, 1, 0);
-    }
-    for (int kind = 0; kind < 3; kind++) {
-        int placed = 0, guard = 0;
-        while (placed < want[kind] && guard++ < 60000) {
-            k++;
-            v3 dir;
-            if (!pick_dir(b, grove, k, kind, seed, &dir)) continue;
-            float raw = world_height_raw(w, bi, dir);
-            /* fraction of the way from the lowest land (sea level or the deepest valley) to the peaks */
-            float lo = b->sea_level > -b->amp ? b->sea_level : -b->amp;
-            float lf = b->amp > 0 ? (raw - lo) / (b->amp - lo) : 0;
-            if (kind == 0 && (lf < 0.08f || lf > 0.75f)) continue;   /* trees: not beach, not peaks */
-            if (kind != 0 && lf < 0.02f) continue;                  /* rocks and shards: dry land or ice */
-            placed++;                                              /* counts even if another octant draws it */
-            if (octant_of(dir) != octant) continue;
 
+    /* the props were placed by world_init; this octant draws its share */
+    for (int i = 0; i < b->nprops; i++) {
+        const prop *q = &b->props[i];
+        if (octant_of(q->dir) != octant) continue;
+        int k = (int)q->k, kind = q->kind;
+        float s = q->s;
+        {
             /* local frame, rotated by a random angle for variety */
-            v3 up = dir, t1 = v3_any_perp(up);
+            v3 up = q->dir, t1 = v3_any_perp(up);
             t1 = v3_rotate(t1, up, noise_hashf(k, 3, kind, seed) * 6.2832f);
             v3 t2 = v3_cross(up, t1);
-            v3 base = v3_scale(dir, world_surface(w, bi, dir) - 0.3f);
-            float s = kind == 0 ? 0.8f + noise_hashf(k, 4, kind, seed) * 0.8f     /* trees 0.8..1.6 */
-                                : 0.7f + noise_hashf(k, 4, kind, seed) * 0.7f;    /* rocks 0.7..1.4 */
+            v3 base = v3_sub(world_prop_base(w, bi, q), b->pos);   /* the mesh is in body space */
             uint32_t pseed = seed ^ (uint32_t)(k * 2654435761u);
 
             if (kind == 0) {

@@ -76,6 +76,10 @@ void hud_draw(C3D_RenderTarget *bottom, const world *w, const player *p, const c
         if (c->gyro) font_draw("MOVE THE 3DS TO LOOK AROUND", 8, 194, 1.5f, dim);
         else if (c->first_person) font_draw("(GYRO BUTTON: MOTION LOOK)", 8, 194, 1.5f, dim);
         else font_draw("(VIEW BUTTON: FIRST PERSON)", 8, 194, 1.5f, dim);
+    } else if (player_locked(p, w)) {
+        font_draw("PAD  LOOK   (ROLL ABOVE THE AIR)", 8, 166, 1.5f, dim);
+        font_draw("X  UP     B  DOWN", 8, 180, 1.5f, dim);
+        font_draw("A  BOOST  Y  BRAKE", 8, 194, 1.5f, dim);
     } else {
         font_draw("PAD  LOOK       L/R ROLL", 8, 166, 1.5f, dim);
         font_draw("X  UP     B  DOWN", 8, 180, 1.5f, dim);
