@@ -26,7 +26,10 @@ static void spawn(school *s, const world *w, const player *p, int i) {
     float a = frandf(&s->rng, 0, 6.2831853f), r = frandf(&s->rng, SPAWN_MIN, SPAWN_MAX);
     v3 pos = v3_add(v3_sub(p->pos, b->pos), v3_add(v3_scale(t1, cosf(a) * r), v3_scale(t2, sinf(a) * r)));
     v3 dir = v3_norm(pos);
-    float depth = frandf(&s->rng, 0.3f, 1.4f);
+    float scale = frandf(&s->rng, 1.3f, 2.8f);
+    /* well under the surface: the body centre 1 to 3 down, plus the fish's own half height and
+       tail fin so no part of it ever breaks the surface */
+    float depth = frandf(&s->rng, 1.0f, 3.0f) + 0.2f * scale;
     if (sea_depth_at(w, p->dom, dir) < depth + WATER_MIN) return;   /* too shallow: try again next frame */
     f->alive = 1;
     f->depth = depth;
@@ -34,7 +37,7 @@ static void spawn(school *s, const world *w, const player *p, int i) {
     v3 h = v3_rotate(v3_any_perp(dir), dir, frandf(&s->rng, 0, 6.2831853f));
     f->fwd = v3_norm(h);
     f->speed = frandf(&s->rng, 0.8f, 2.0f);
-    f->scale = frandf(&s->rng, 1.3f, 2.8f);
+    f->scale = scale;
     f->phase = frandf(&s->rng, 0, 6.2831853f);
     f->turn = 0;
 }

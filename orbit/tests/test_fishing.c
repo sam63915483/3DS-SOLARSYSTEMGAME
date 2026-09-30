@@ -255,7 +255,7 @@ int main(void) {
             alive++;
             v3 dir = v3_norm(s.f[i].rel);
             float r = v3_len(s.f[i].rel);
-            if (r > sea_r - 0.2f) bad++;                                       /* breaking the surface */
+            if (r > sea_r - 1.0f - 0.2f * s.f[i].scale) bad++;                 /* too near the surface */
             if (r < world_surface(&w, BODY_VERDANT, dir) + 0.3f) bad++;       /* in the seabed */
             if (v3_len(v3_sub(v3_add(w.b[BODY_VERDANT].pos, s.f[i].rel), p.pos)) > 61.0f) bad++;
             if (s.f[i].scale < 1.0f) bad++;
