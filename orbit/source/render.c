@@ -335,14 +335,19 @@ void render_scene(const world *w, const player *p, const camera *c, float time) 
 
     C3D_Mtx model;
     /* stars follow the camera so they never get closer; they fade as the sky brightens */
-    /* stars stay full until the sky is properly bright, then fade out */
-    float star_k = 1.0f - clamp01((skyk - 0.35f) / 0.45f);
+    /* stars add light on top of the sky (never darker than it) and fade with the sky's
+       actual brightness: full at night, faint in a dark high-altitude sky, gone by day */
+    float lum = (0.30f * ((sky >> 24) & 0xFF) + 0.59f * ((sky >> 16) & 0xFF) + 0.11f * ((sky >> 8) & 0xFF)) / 255.0f;
+    float star_k = 1.0f - clamp01((lum - 0.05f) / 0.40f);
+    (void)skyk;
     if (star_k > 0.02f) {
         C3D_Material mat_stars = mat_glow;
-        mat_stars.emission[0] = mat_stars.emission[1] = mat_stars.emission[2] = star_k > 1 ? 1 : star_k;
+        mat_stars.emission[0] = mat_stars.emission[1] = mat_stars.emission[2] = star_k;
         mtx_translate(&model, c->pos);
         C3D_CullFace(GPU_CULL_NONE);
+        C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ONE, GPU_ONE, GPU_ONE);
         draw(&stars, &model, &mat_stars);
+        C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
         C3D_CullFace(GPU_CULL_BACK_CCW);
     }
 
