@@ -29,7 +29,6 @@ static gpu_mesh bodies[BODY_COUNT], props[BODY_COUNT][8], grass[BODY_COUNT][GRAS
 static gpu_mesh water[BODY_COUNT], shell_in[BODY_COUNT], clouds[BODY_COUNT];
 static gpu_mesh astro_body, astro_arm, astro_leg, flame_outer, flame_inner, stars;
 static gpu_mesh rod_seg, bobber_top, bobber_bot, fish_mesh, gem;
-static gpu_mesh cave_tunnel[BODY_COUNT], cave_cavern[BODY_COUNT], cave_crystals[BODY_COUNT];
 #define LINE_SEGS 12
 #define LINE_VERTS (LINE_SEGS * 6)
 #define SPLASH_VERTS (8 * 6)
@@ -50,10 +49,6 @@ static const C3D_Material mat_water = {
 };
 static const C3D_Material mat_glow = {
     { 0, 0, 0 }, { 0, 0, 0 }, { 0, 0, 0 }, { 0, 0, 0 }, { 1.0f, 1.0f, 1.0f },
-};
-/* cave rock: mostly ambient, so the sun's direction barely shows through the walls */
-static const C3D_Material mat_cave = {
-    { 0.55f, 0.55f, 0.62f }, { 0.35f, 0.35f, 0.35f }, { 0.05f, 0.05f, 0.05f }, { 0, 0, 0 }, { 0, 0, 0 },
 };
 
 static gpu_mesh upload(mesh m) {
@@ -136,11 +131,6 @@ void render_init(const world *w) {
     bobber_bot = upload(mesh_sphere(0.11f, 6, 8, 0xF0F0F0FF));
     fish_mesh = upload(mesh_fish());
     gem = upload(mesh_gem(1.0f, 0xD0FF70FF));   /* unit, scaled per firefly */
-    for (int i = 0; i < BODY_COUNT; i++) {
-        cave_tunnel[i] = upload(mesh_cave_tunnel(w, i));
-        cave_cavern[i] = upload(mesh_cave_cavern(w, i));
-        cave_crystals[i] = upload(mesh_cave_crystals(w, i));
-    }
     line_vbo = linearAlloc(LINE_VERTS * sizeof(vertex));
     splash_vbo = linearAlloc(SPLASH_VERTS * sizeof(vertex));
 }
@@ -499,11 +489,6 @@ void render_scene(const world *w, const player *p, const camera *c, const fishin
            would be smaller than a pixel anyway, and skip the octants facing away from us */
         v3 to_cam = v3_sub(c->pos, b->pos);
         float gap = v3_len(to_cam) - b->radius;
-        if (b->cave.enabled && gap < 60.0f) {   /* the cave: walls face inward, crystals glow */
-            draw(&cave_tunnel[i], &model, &mat_cave);
-            draw(&cave_cavern[i], &model, &mat_cave);
-            draw(&cave_crystals[i], &model, &mat_glow);
-        }
         if (gap < 700.0f) {
             v3 d = v3_norm(to_cam);
             for (int o = 0; o < 8; o++) {
@@ -622,7 +607,6 @@ void render_fini(void) {
     gpu_free(&astro_body); gpu_free(&astro_arm); gpu_free(&astro_leg);
     gpu_free(&flame_outer); gpu_free(&flame_inner); gpu_free(&stars);
     gpu_free(&rod_seg); gpu_free(&bobber_top); gpu_free(&bobber_bot); gpu_free(&fish_mesh); gpu_free(&gem);
-    for (int i = 0; i < BODY_COUNT; i++) { gpu_free(&cave_tunnel[i]); gpu_free(&cave_cavern[i]); gpu_free(&cave_crystals[i]); }
     linearFree(line_vbo); linearFree(splash_vbo);
     shaderProgramFree(&program);
     shaderProgramFree(&program_atmo);

@@ -48,12 +48,6 @@ mesh mesh_astronaut(astro_part part);
 mesh mesh_fish(void);
 /* Octahedron of the given radius at the origin (fireflies, gems). */
 mesh mesh_gem(float r, uint32_t col);
-/* Body i's cave, in body space, walls facing inward: the tunnel with its collar around the
-   mouth, the core cavern with a hole where the tunnel enters, and glowing crystals. Empty
-   when the body has no cave. */
-mesh mesh_cave_tunnel(const world *w, int i);
-mesh mesh_cave_cavern(const world *w, int i);
-mesh mesh_cave_crystals(const world *w, int i);
 /* n small triangles scattered on a sphere of the given radius. */
 mesh mesh_stars(int n, float radius, float size, uint32_t seed);
 void mesh_free(mesh *m);

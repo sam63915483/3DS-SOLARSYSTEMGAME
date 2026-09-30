@@ -46,8 +46,7 @@ void hud_draw(C3D_RenderTarget *bottom, const world *w, const player *p, const c
     if (c->first_person) button(GYRO_X, GYRO_W, c->gyro ? (gyro_settling ? "HOLD STILL" : "GYRO ON") : "GYRO", c->gyro, white);
 
     /* status */
-    const char *status = p->in_core ? "CORE  ZERO G" : p->in_cave ? (p->grounded ? "CAVE" : "CAVE  FLYING")
-                       : fishing_active(f) ? "FISHING" : (p->swimming ? "SWIMMING" : (p->grounded ? (p->in_water ? "WADING" : "GROUNDED") : (p->thrusting ? "THRUST" : "FLYING")));
+    const char *status = fishing_active(f) ? "FISHING" : (p->swimming ? "SWIMMING" : (p->grounded ? (p->in_water ? "WADING" : "GROUNDED") : (p->thrusting ? "THRUST" : "FLYING")));
     if (f->caught > 0) snprintf(buf, sizeof buf, "%s  %s  FISH %d", b->name, status, f->caught);
     else snprintf(buf, sizeof buf, "%s  %s", b->name, status);
     font_draw(buf, 8, 40, 2, white);

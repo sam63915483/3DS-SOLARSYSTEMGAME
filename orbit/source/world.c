@@ -1,5 +1,4 @@
 #include "world.h"
-#include "cave.h"
 #include "noise.h"
 #include <stdlib.h>
 
@@ -60,7 +59,6 @@ void world_init(world *w) {
         b->omega = b->orbit_r > 0 && b->parent >= 0 ? sqrtf(mu_par / (b->orbit_r * b->orbit_r * b->orbit_r)) : 0;
         body_place(w, i, 0);
         b->prev = b->pos;
-        cave_setup(w, i);   /* before the bake: the pit around the mouth is terrain */
         /* bake the height grid: the mesh and the collision both read it */
         b->grid = malloc(sizeof(float) * (b->rings + 1) * b->segs);
         for (int r = 0; r <= b->rings; r++) {
@@ -175,19 +173,11 @@ v3 world_gravity_from(const world *w, int i, v3 p) {
     float r2 = v3_dot(d, d);
     float r = sqrtf(r2);
     if (r < b->radius) {
-        /* inside: the pull fades linearly to nothing at the core cavern (a solid shell's inside
-           is weightless), so the caves get lighter as they go down and the core is zero g */
-        float core = b->cave.enabled ? b->cave.core_r : 0;
-        float k = r > core ? (r - core) / (b->radius - core) : 0;
+        /* inside: the pull fades linearly to nothing at the centre, so it never blows up */
         if (r < 1e-4f) return v3_(0, 0, 0);
-        return v3_scale(d, b->mu / (b->radius * b->radius) * k / r);
+        return v3_scale(d, b->mu / (b->radius * b->radius) * (r / b->radius) / r);
     }
     return v3_scale(d, b->mu / (r2 * r));
-}
-
-int world_in_hole(const world *w, int i, v3 dir) {
-    const cave *c = &w->b[i].cave;
-    return c->enabled && cave_angle(dir, c->entrance) < c->hole_ang;
 }
 
 v3 world_gravity_at(const world *w, v3 p) {
@@ -254,15 +244,7 @@ float world_height_raw(const world *w, int i, v3 dir) {
     if (b->amp <= 0) return 0;
     v3 p = v3_add(v3_scale(dir, b->freq), v3_(7.3f, 1.9f, 4.1f));
     float n = noise_fbm(p, 3, b->seed);
-    if (b->terrain == TERRAIN_MOON) {
-        float h = (n - 0.5f) * 0.6f * b->amp + moon_craters(dir, b->seed, b->amp);
-        if (b->cave.enabled) {   /* the pit around the cave mouth: craters smoothed away, then a flat-bottomed bowl */
-            float x = cave_angle(dir, b->cave.entrance) / b->cave.pit_ang;
-            if (x < 2) h *= x * 0.5f;
-            if (x < 1) h -= b->cave.pit_depth * (1 - x * x * x * x);
-        }
-        return h;
-    }
+    if (b->terrain == TERRAIN_MOON) return (n - 0.5f) * 0.6f * b->amp + moon_craters(dir, b->seed, b->amp);
     float h = (n - 0.5f) * 2.0f * b->amp;
     if (b->liquid && h < b->sea_level) {
         /* deepen the seas: a steep drop right off the shoreline (4x the land slope), easing to
