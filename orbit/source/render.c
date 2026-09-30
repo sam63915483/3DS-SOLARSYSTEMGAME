@@ -28,6 +28,12 @@ static C3D_LightLut lutPhong;
 static gpu_mesh bodies[BODY_COUNT], props[BODY_COUNT][8], grass[BODY_COUNT][GRASS_CELLS];
 static gpu_mesh water[BODY_COUNT], shell_in[BODY_COUNT], clouds[BODY_COUNT];
 static gpu_mesh astro_body, astro_arm, astro_leg, flame_outer, flame_inner, stars;
+static gpu_mesh rod_seg, bobber_top, bobber_bot, fish_mesh;
+#define LINE_SEGS 12
+#define LINE_VERTS (LINE_SEGS * 6)
+#define SPLASH_VERTS (8 * 6)
+static vertex *line_vbo, *splash_vbo;   /* rebuilt every frame */
+#define ROD_ARM_SWING (-1.3f)   /* right arm raised forward to hold the rod; flip the sign if it points back */
 static C3D_Tex detail[BODY_COUNT], water_tex, cloud_tex;
 static int has_detail[BODY_COUNT], has_water_tex, has_cloud_tex;
 static float sun_sx, sun_sy, sun_k;
@@ -119,6 +125,14 @@ void render_init(const world *w) {
     flame_outer = upload(mesh_cone(8, 0xFF7A1AFF));   /* unit cones, scaled per jet */
     flame_inner = upload(mesh_cone(8, 0xFFE878FF));
     stars = upload(mesh_stars(360, STAR_RADIUS, 14.0f, 20260929u));
+
+    /* fishing tackle */
+    rod_seg = upload(mesh_box(1, 1, 1, 0x6B4A2AFF));       /* unit box, scaled per segment */
+    bobber_top = upload(mesh_sphere(0.12f, 6, 8, 0xE03030FF));
+    bobber_bot = upload(mesh_sphere(0.11f, 6, 8, 0xF0F0F0FF));
+    fish_mesh = upload(mesh_fish());
+    line_vbo = linearAlloc(LINE_VERTS * sizeof(vertex));
+    splash_vbo = linearAlloc(SPLASH_VERTS * sizeof(vertex));
 }
 
 /* Combiner setup. mode 0: vertex colour * lighting; 1: texture * vertex colour * lighting;
@@ -235,7 +249,7 @@ static void draw_limb(const gpu_mesh *g, const C3D_Mtx *base, v3 pivot, float sw
     draw(g, &m, &mat_lit);
 }
 
-static void draw_player(const player *p, const camera *c, float time) {
+static void draw_player(const player *p, const camera *c, int fishing, float time) {
     if (c->fp > 0.6f) return;   /* first person: no model in the way */
 
     /* the model uses the player's smoothed body basis: upright on the ground, easing onto the
@@ -261,7 +275,8 @@ static void draw_player(const player *p, const camera *c, float time) {
     draw_limb(&astro_leg, &base, v3_(-0.17f, -0.15f, 0), swing + leg_back, 0);
     draw_limb(&astro_leg, &base, v3_(0.17f, -0.15f, 0), -swing + leg_back, 0);
     draw_limb(&astro_arm, &base, v3_(-0.40f, 0.40f, 0), arm_swing, arm_splay);
-    draw_limb(&astro_arm, &base, v3_(0.40f, 0.40f, 0), -arm_swing * (player_on_foot(p) ? 1 : -1), -arm_splay);
+    if (fishing) draw_limb(&astro_arm, &base, v3_(0.40f, 0.40f, 0), ROD_ARM_SWING, 0);   /* holding the rod out front */
+    else draw_limb(&astro_arm, &base, v3_(0.40f, 0.40f, 0), -arm_swing * (player_on_foot(p) ? 1 : -1), -arm_splay);
 
     /* jets: exhaust goes opposite to the thrust. pack plate spans y -0.2..0.44, z -0.39..-0.19;
        the nozzle is at the bottom centre, the tanks top out at y 0.5 */
@@ -279,6 +294,98 @@ static void draw_player(const player *p, const camera *c, float time) {
     } else if (p->jet_roll < -0.05f) {
         draw_jet(&base, v3_(0.28f, 0.44f, -0.34f), v3_(1, 1, 0), 0.55f, time, 3);
         draw_jet(&base, v3_(-0.28f, -0.20f, -0.34f), v3_(-1, -1, 0), 0.55f, time, 4);
+    }
+}
+
+static void put_v(vertex *v, v3 p, v3 n, u32 col) {
+    v->pos[0] = p.x; v->pos[1] = p.y; v->pos[2] = p.z;
+    v->nrm[0] = n.x; v->nrm[1] = n.y; v->nrm[2] = n.z;
+    v->uv[0] = v->uv[1] = 0;
+    v->col[0] = (col >> 24) & 0xFF; v->col[1] = (col >> 16) & 0xFF; v->col[2] = (col >> 8) & 0xFF; v->col[3] = col & 0xFF;
+}
+
+/* Draws a CPU-filled buffer at the world origin. */
+static void draw_dynamic(vertex *vbo, int count, const C3D_Material *mat) {
+    if (!count) return;
+    GSPGPU_FlushDataCache(vbo, count * sizeof(vertex));
+    gpu_mesh g = { vbo, count, 0, 0 };
+    C3D_Mtx m; Mtx_Identity(&m);
+    draw(&g, &m, mat);
+}
+
+/* Rod, bobber and fish: opaque, lit. */
+static void draw_fishing_solid(const fishing *f) {
+    if (!fishing_active(f)) return;
+    rod_frame r; fishing_rod_frame(f, &r);
+    for (int i = 0; i < 4; i++) {   /* stiff butt, whippy tip: each segment bends a little more */
+        v3 a = fishing_rod_point(&r, i / 4.0f), b = fishing_rod_point(&r, (i + 1) / 4.0f);
+        v3 up = v3_norm(v3_sub(b, a)), fwd = v3_any_perp(up), right = v3_cross(up, fwd);
+        float th = 0.05f - 0.03f * (i + 0.5f) / 4.0f;
+        C3D_Mtx m; mtx_basis(&m, right, up, fwd, v3_scale(v3_add(a, b), 0.5f));
+        Mtx_Scale(&m, th, v3_len(v3_sub(b, a)) * 1.03f, th);
+        draw(&rod_seg, &m, &mat_lit);
+    }
+    if (f->bobber_visible) {
+        C3D_Mtx m;
+        mtx_translate(&m, v3_add(f->bobber, v3_scale(f->bobber_up, 0.03f)));
+        draw(&bobber_top, &m, &mat_lit);
+        mtx_translate(&m, v3_sub(f->bobber, v3_scale(f->bobber_up, 0.03f)));
+        draw(&bobber_bot, &m, &mat_lit);
+    }
+    if (f->fish_visible) {
+        v3 up = f->fish_up, fwd = f->fish_fwd, right = v3_cross(up, fwd);
+        C3D_Mtx m; mtx_basis(&m, right, up, fwd, f->fish_pos);
+        Mtx_Scale(&m, f->fish_scale, f->fish_scale, f->fish_scale);
+        draw(&fish_mesh, &m, &mat_lit);
+    }
+}
+
+static v3 bezier(v3 a, v3 c, v3 b, float t) {
+    float u = 1 - t;
+    return v3_add(v3_add(v3_scale(a, u * u), v3_scale(c, 2 * u * t)), v3_scale(b, t * t));
+}
+
+/* Line and splash: translucent, unlit; call in the blended pass with culling off. */
+static void draw_fishing_soft(const fishing *f, const camera *c) {
+    if (!fishing_active(f)) return;
+    if (f->line_visible) {
+        rod_frame r; fishing_rod_frame(f, &r);
+        v3 a = fishing_rod_point(&r, 1.0f), b = f->bobber;
+        float d = v3_len(v3_sub(b, a));
+        float sag = 0.3f * (1.0f + (0.05f - 1.0f) * f->line_taut);
+        v3 ctrl = v3_add(v3_scale(v3_add(a, b), 0.5f), v3_scale(f->bobber_up, -d * sag));
+        const u32 col = 0xFFFFFF8Cu;   /* white, alpha 140 */
+        int n = 0; v3 prev = a;
+        for (int i = 0; i < LINE_SEGS; i++) {
+            v3 q = bezier(a, ctrl, b, (i + 1) / (float)LINE_SEGS);
+            v3 seg = v3_sub(q, prev), to_cam = v3_sub(c->pos, prev);
+            v3 side = v3_cross(seg, to_cam);
+            side = v3_len(side) > 1e-6f ? v3_norm(side) : v3_any_perp(v3_norm(seg));
+            /* about 1.5 px wide whatever the distance */
+            v3 s0 = v3_scale(side, 0.0033f * v3_len(to_cam)), s1 = v3_scale(side, 0.0033f * v3_len(v3_sub(c->pos, q)));
+            v3 nrm = v3_norm(to_cam);
+            v3 p0 = v3_add(prev, s0), p1 = v3_sub(prev, s0), p2 = v3_add(q, s1), p3 = v3_sub(q, s1);
+            put_v(&line_vbo[n++], p0, nrm, col); put_v(&line_vbo[n++], p1, nrm, col); put_v(&line_vbo[n++], p2, nrm, col);
+            put_v(&line_vbo[n++], p1, nrm, col); put_v(&line_vbo[n++], p3, nrm, col); put_v(&line_vbo[n++], p2, nrm, col);
+            prev = q;
+        }
+        draw_dynamic(line_vbo, n, &mat_glow);
+    }
+    if (f->splash_t < 0.5f) {
+        float k = f->splash_t / 0.5f;
+        float rad = 0.2f + 1.0f * k, w = 0.06f + 0.04f * k;
+        u32 col = 0xFFFFFF00u | (u32)(200 * (1.0f - k));
+        v3 up = f->bobber_up, u = v3_any_perp(up), v = v3_cross(up, u);
+        int n = 0;
+        for (int i = 0; i < 8; i++) {
+            float a0 = 6.2831853f * i / 8, a1 = 6.2831853f * (i + 1) / 8;
+            v3 d0 = v3_add(v3_scale(u, cosf(a0)), v3_scale(v, sinf(a0))), d1 = v3_add(v3_scale(u, cosf(a1)), v3_scale(v, sinf(a1)));
+            v3 o0 = v3_add(f->splash_pos, v3_scale(d0, rad)), o1 = v3_add(f->splash_pos, v3_scale(d1, rad));
+            v3 i0 = v3_add(f->splash_pos, v3_scale(d0, rad - w)), i1 = v3_add(f->splash_pos, v3_scale(d1, rad - w));
+            put_v(&splash_vbo[n++], i0, up, col); put_v(&splash_vbo[n++], o0, up, col); put_v(&splash_vbo[n++], o1, up, col);
+            put_v(&splash_vbo[n++], i0, up, col); put_v(&splash_vbo[n++], o1, up, col); put_v(&splash_vbo[n++], i1, up, col);
+        }
+        draw_dynamic(splash_vbo, n, &mat_glow);
     }
 }
 
@@ -308,7 +415,7 @@ static float sky_color(const world *w, const player *p, const camera *c, u32 *ou
     return k;
 }
 
-void render_scene(const world *w, const player *p, const camera *c, float time) {
+void render_scene(const world *w, const player *p, const camera *c, const fishing *f, float time) {
     u32 sky;
     float skyk = sky_color(w, p, c, &sky);
     C3D_RenderTargetClear(top, C3D_CLEAR_ALL, sky, 0);
@@ -370,7 +477,8 @@ void render_scene(const world *w, const player *p, const camera *c, float time) 
             }
         }
     }
-    draw_player(p, c, time);
+    draw_player(p, c, fishing_active(f), time);
+    draw_fishing_solid(f);
 
     /* seas: translucent, textured ripples drifting, both sides visible, no depth writes */
     C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA);
@@ -382,6 +490,7 @@ void render_scene(const world *w, const player *p, const camera *c, float time) 
         Mtx_RotateY(&model, time * 0.012f, true);
         draw_ex(&water[i], &model, &mat_water, has_water_tex ? &water_tex : NULL, uMV);
     }
+    draw_fishing_soft(f, c);
 
     /* clouds: lit, textured alpha, drifting */
     for (int i = 0; i < BODY_COUNT; i++) {
@@ -463,6 +572,8 @@ void render_fini(void) {
     if (has_cloud_tex) C3D_TexDelete(&cloud_tex);
     gpu_free(&astro_body); gpu_free(&astro_arm); gpu_free(&astro_leg);
     gpu_free(&flame_outer); gpu_free(&flame_inner); gpu_free(&stars);
+    gpu_free(&rod_seg); gpu_free(&bobber_top); gpu_free(&bobber_bot); gpu_free(&fish_mesh);
+    linearFree(line_vbo); linearFree(splash_vbo);
     shaderProgramFree(&program);
     shaderProgramFree(&program_atmo);
     DVLB_Free(dvlb);

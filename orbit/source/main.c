@@ -9,12 +9,31 @@
 #include "hud.h"
 #include "flare.h"
 #include "gimbal.h"
+#include "fishing.h"
+#include "fishhud.h"
 
 static float pad_axis(int v) {
     float a = v / 156.0f;
     if (a > 1) a = 1;
     if (a < -1) a = -1;
     return a;
+}
+
+/* Where the rod is held: the right hand of the model in third person, the lower right of the
+   view in first person, with the plane the rod swings in. */
+static void rod_hand(const player *p, const camera *c, v3 *butt, v3 *fwd, v3 *up) {
+    if (c->fp > 0.5f) {
+        v3 right = v3_norm(v3_cross(c->view, c->view_up));
+        *butt = v3_add(v3_add(v3_add(c->pos, v3_scale(right, 0.38f)), v3_scale(c->view_up, -0.32f)), v3_scale(c->view, 0.25f));
+        *fwd = c->view; *up = c->view_up;
+    } else {
+        v3 u = p->body_up, f = v3_tangent(p->body_fwd, u);
+        f = v3_len(f) < 1e-3f ? v3_any_perp(u) : v3_norm(f);
+        v3 right = v3_cross(u, f);
+        /* the raised right arm: shoulder (0.40, 0.40) plus 0.74 of arm swung forward */
+        *butt = v3_add(v3_add(v3_add(p->pos, v3_scale(right, 0.40f)), v3_scale(u, 0.20f)), v3_scale(f, 0.70f));
+        *fwd = f; *up = u;
+    }
 }
 
 /* Motion look. Sensor frame (matches Citra/Azahar, which mirror the console): x points right,
@@ -112,6 +131,7 @@ int main(void) {
     camera cam; camera_init(&cam, &p);
     render_init(&w);
     hud_init();
+    fishing fish; fishing_init(&fish);
 
     u64 last = osGetTime();
     float fps = 60;
@@ -119,7 +139,7 @@ int main(void) {
         hidScanInput();
         u32 kDown = hidKeysDown(), kHeld = hidKeysHeld();
         if (kDown & KEY_START) break;
-        if (kDown & KEY_SELECT) { player_spawn(&p, &w, BODY_START); camera_init(&cam, &p); }
+        if (kDown & KEY_SELECT) { player_spawn(&p, &w, BODY_START); camera_init(&cam, &p); fishing_init(&fish); }
 
         u64 now = osGetTime();
         float dt = (now - last) / 1000.0f;
@@ -141,6 +161,7 @@ int main(void) {
             cin.look_x = px; cin.look_y = py;
             in.mx = 0; in.my = (kHeld & KEY_A) ? 1.0f : 0.0f;
             in.jump_pressed = (kDown & KEY_X) != 0;
+            if (fishing_active(&fish)) in.face = cam.fwd;   /* square up to the cast */
         } else {
             /* flight: the pad looks around freely, L/R roll, buttons thrust */
             cin.turn = ((kHeld & KEY_R) ? 1.0f : 0.0f) - ((kHeld & KEY_L) ? 1.0f : 0.0f);
@@ -165,9 +186,19 @@ int main(void) {
         world_update(&w, dt);
         player_update(&p, &w, &in, dt);
         camera_update(&cam, &w, &p, &cin, dt);
+        {
+            fishing_input fin;
+            memset(&fin, 0, sizeof fin);
+            fin.equip_pressed = (kDown & KEY_DDOWN) != 0;
+            fin.r_down = (kHeld & KEY_R) != 0;
+            fin.r_pressed = (kDown & KEY_R) != 0;
+            fin.cast_dir = cam.view;
+            rod_hand(&p, &cam, &fin.hand, &fin.hand_fwd, &fin.hand_up);
+            fishing_update(&fish, &w, &p, &fin, dt);
+        }
 
         C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
-        render_scene(&w, &p, &cam, w.t);
+        render_scene(&w, &p, &cam, &fish, w.t);
         C3D_LightEnvBind(NULL);
         C2D_Prepare();
         {
@@ -178,7 +209,8 @@ int main(void) {
         C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA,
                        GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA);
         gimbal_draw(render_top_target(), &w, &p, &cam);
-        hud_draw(bottom, &w, &p, &cam, fps, sensors_calibrating());
+        fishhud_draw(render_top_target(), &fish, dt);
+        hud_draw(bottom, &w, &p, &cam, &fish, fps, sensors_calibrating());
         C2D_Flush();
         C3D_FrameEnd(0);
     }

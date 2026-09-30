@@ -26,7 +26,7 @@ static void button(int x, int w, const char *label, int lit, u32 text) {
     font_draw(label, x + (w - font_width(label, 1)) / 2, BTN_Y + 7, 1, text);
 }
 
-void hud_draw(C3D_RenderTarget *bottom, const world *w, const player *p, const camera *c, float fps, int gyro_settling) {
+void hud_draw(C3D_RenderTarget *bottom, const world *w, const player *p, const camera *c, const fishing *f, float fps, int gyro_settling) {
     C2D_TargetClear(bottom, C2D_Color32(0x10, 0x12, 0x1A, 0xFF));
     C2D_SceneBegin(bottom);
 
@@ -46,7 +46,9 @@ void hud_draw(C3D_RenderTarget *bottom, const world *w, const player *p, const c
     if (c->first_person) button(GYRO_X, GYRO_W, c->gyro ? (gyro_settling ? "HOLD STILL" : "GYRO ON") : "GYRO", c->gyro, white);
 
     /* status */
-    snprintf(buf, sizeof buf, "%s  %s", b->name, p->swimming ? "SWIMMING" : (p->grounded ? (p->in_water ? "WADING" : "GROUNDED") : (p->thrusting ? "THRUST" : "FLYING")));
+    const char *status = fishing_active(f) ? "FISHING" : (p->swimming ? "SWIMMING" : (p->grounded ? (p->in_water ? "WADING" : "GROUNDED") : (p->thrusting ? "THRUST" : "FLYING")));
+    if (f->caught > 0) snprintf(buf, sizeof buf, "%s  %s  FISH %d", b->name, status, f->caught);
+    else snprintf(buf, sizeof buf, "%s  %s", b->name, status);
     font_draw(buf, 8, 40, 2, white);
     snprintf(buf, sizeof buf, "SPD %.1f  ALT %.1f  G %.1f", p->speed, p->altitude, v3_len(world_gravity_at(w, p->pos)));
     font_draw(buf, 8, 62, 2, white);
@@ -64,9 +66,13 @@ void hud_draw(C3D_RenderTarget *bottom, const world *w, const player *p, const c
 
     /* controls */
     C2D_DrawRectSolid(0, 161, 0, 320, 1, C2D_Color32(0x30, 0x34, 0x44, 0xFF));
-    if (player_on_foot(p)) {
+    if (fishing_active(f)) {
+        font_draw("R  HOLD: CAST / REEL", 8, 166, 1.5f, dim);
+        font_draw("TAP R: HOOK A BITE", 8, 180, 1.5f, dim);
+        font_draw("DPAD DOWN: PUT AWAY", 8, 194, 1.5f, dim);
+    } else if (player_on_foot(p)) {
         font_draw("PAD  LOOK       A  WALK", 8, 166, 1.5f, dim);
-        font_draw("X  JUMP", 8, 180, 1.5f, dim);
+        font_draw("X  JUMP   DPAD DOWN: ROD", 8, 180, 1.5f, dim);
         if (c->gyro) font_draw("MOVE THE 3DS TO LOOK AROUND", 8, 194, 1.5f, dim);
         else if (c->first_person) font_draw("(GYRO BUTTON: MOTION LOOK)", 8, 194, 1.5f, dim);
         else font_draw("(VIEW BUTTON: FIRST PERSON)", 8, 194, 1.5f, dim);
