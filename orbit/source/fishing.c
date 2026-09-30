@@ -27,7 +27,7 @@
 
 static const float STRIKE_WINDOW[3] = { 3.0f, 2.0f, 1.5f };
 static const float FISH_SCALE[3] = { 1.6f, 2.4f, 3.4f };   /* of the 0.5-long mesh: 0.8 / 1.2 / 1.7 long */
-#define ARM_REST_SWING 1.3f   /* radians the right arm is swung forward (positive) holding the rod at rest */
+#define ARM_REST_SWING (-1.3f)   /* radians the right arm is swung about the shoulder at rest: hand out in front */
 static const float WEIGHT_LO[3] = { 1.0f, 3.0f, 9.0f }, WEIGHT_HI[3] = { 3.0f, 9.0f, 26.0f };   /* pounds */
 static const char *TIER_NAME[3] = { "COMMON", "UNCOMMON", "RARE" };
 
@@ -63,11 +63,12 @@ v3 fishing_rod_point(const rod_frame *r, float s) {
 
 float fishing_arm_swing(const fishing *f) {
     if (!fishing_active(f)) return ARM_REST_SWING;
-    /* the arm turns with the rod so the two stay rigid, within what a shoulder can do */
+    /* the arm turns with the rod so the two stay rigid: as the rod tilts back the hand rises
+       over the head and behind it (swing more negative), then whips forward for the cast */
     float e = ROD_REST_ELEV - f->rod_pose - f->rod_recoil + f->rod_haul;
-    float a = ARM_REST_SWING - (e - ROD_REST_ELEV) * DEG;   /* rod back = arm back (swing decreasing) */
-    if (a > 2.4f) a = 2.4f;
-    if (a < -1.0f) a = -1.0f;
+    float a = ARM_REST_SWING - (e - ROD_REST_ELEV) * DEG;
+    if (a > 0.3f) a = 0.3f;
+    if (a < -3.6f) a = -3.6f;
     return a;
 }
 

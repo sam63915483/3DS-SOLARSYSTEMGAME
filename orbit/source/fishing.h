@@ -84,7 +84,8 @@ void fishing_rod_frame(const fishing *f, rod_frame *r);
 /* Point on the bent rod at fraction s (0 butt .. 1 tip). */
 v3 fishing_rod_point(const rod_frame *r, float s);
 static inline int fishing_active(const fishing *f) { return f->state != FISH_OFF; }
-/* Radians the right arm is swung about the shoulder (positive = forward) to hold the rod. */
+/* Radians the right arm is swung about the shoulder to hold the rod: -1.3 is out in front,
+   about -pi is straight up, less is behind the head. */
 float fishing_arm_swing(const fishing *f);
 const char *fishing_tier_name(int tier);
 
