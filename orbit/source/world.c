@@ -180,10 +180,15 @@ v3 world_gravity_from(const world *w, int i, v3 p) {
     float r2 = v3_dot(d, d);
     float r = sqrtf(r2);
     if (r < b->radius) {
-        /* inside: the pull fades linearly to nothing at the core cavern (a hollow shell's inside
-           is weightless), so the cave gets lighter as it goes down and the core is zero g */
-        float core = b->caves.enabled ? b->caves.core_r + CORE_ZONE : 0;   /* weightless from just outside the cavern */
-        float k = r > core ? (r - core) / (b->radius - core) : 0;
+        /* inside: the pull stays at least half strength all the way down the tunnels, keeps
+           pulling toward the centre past the cavern wall so you drop in off the tunnel's end,
+           then fades to nothing over CORE_FADE: the heart of the cavern is weightless */
+        float k;
+        if (b->caves.enabled) {
+            float core = b->caves.core_r;
+            if (r >= core) k = 0.5f + 0.5f * (r - core) / (b->radius - core);
+            else k = r > core - CORE_FADE ? 0.5f * (r - (core - CORE_FADE)) / CORE_FADE : 0;
+        } else k = r / b->radius;
         if (r < 1e-4f) return v3_(0, 0, 0);
         return v3_scale(d, b->mu / (b->radius * b->radius) * k / r);
     }

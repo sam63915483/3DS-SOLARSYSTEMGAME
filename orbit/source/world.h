@@ -38,7 +38,7 @@ typedef struct { int trees, rocks, shards; uint32_t rock_a, rock_b; float rock_s
 #define CAVE_SEG_MAX 180
 #define CAVE_BLOB_MAX 28
 #define CAVE_MOUTH_MAX 4
-#define CORE_ZONE 6.0f   /* the zero-g zone reaches this far outside the core cavern's wall */
+#define CORE_FADE 5.0f   /* inside the core cavern's wall, gravity fades to zero over this depth */
 typedef struct { v3 a, b; float r; } cave_seg;
 typedef struct { v3 c; float r; } cave_blob;
 typedef struct {

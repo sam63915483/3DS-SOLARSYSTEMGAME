@@ -8,6 +8,13 @@
 
 #define DT (1.0f / 60.0f)
 
+/* Rock within 3 units straight below (the same test the player uses for standing). */
+static int moon_support_probe(const world *w, int i, v3 rel) {
+    v3 up = v3_norm(rel);
+    for (float s = 0.3f; s <= 3.0f; s += 0.15f) if (moon_field(w, i, v3_sub(rel, v3_scale(up, s))) > 0) return 1;
+    return 0;
+}
+
 /* A point in open air somewhere along a tunnel segment's axis. */
 static v3 on_axis(const cave_seg *s, float t) { return v3_lerp(s->a, s->b, t); }
 
@@ -149,6 +156,59 @@ int main(void) {
             camera_input cin; memset(&cin, 0, sizeof cin);
             for (int i = 0; i < 90; i++) camera_update(&cam, &w, &p, &cin, DT);
             CHECK(moon_field(&w, moons[m], v3_sub(cam.pos, b->pos)) < 0, "the camera is in the air, not in the rock");
+        }
+        /* walking down a trunk to its end: you walk off the lip and drop into the core, you
+           do not hang in the air above it */
+        {
+            int end = -1;
+            for (int i = 3; i < c->nseg && end < 0; i++) if (v3_len(c->seg[i].b) < c->core_r + 2.1f) end = i;
+            CHECK(end >= 3, "found a trunk that ends in the core");
+            if (end >= 3) {
+                player p; memset(&p, 0, sizeof p);
+                p.dom = moons[m];
+                v3 start = on_axis(&c->seg[end - 2], 0.5f);
+                p.pos = v3_add(b->pos, start);
+                p.up = p.body_up = v3_norm(start);
+                player_input in; memset(&in, 0, sizeof in);
+                float hover = 0; int reached = 0;
+                for (int i = 0; i < 900 && !reached; i++) {
+                    /* aim at the end of the trunk, along the ground */
+                    v3 to = v3_tangent(v3_sub(v3_add(b->pos, c->seg[end].b), p.pos), p.up);
+                    v3 f = v3_len(to) > 1e-3f ? v3_norm(to) : p.facing;
+                    in.cam_forward = in.view_forward = f; in.view_up = p.up; in.my = 1;
+                    player_update(&p, &w, &in, DT);
+                    v3 rel = v3_sub(p.pos, b->pos);
+                    if (p.grounded && !moon_support_probe(&w, moons[m], rel)) hover += DT;
+                    if (p.in_core) reached = 1;
+                }
+                printf("     (walked off the trunk into the core: %s, grounded over nothing for %.2f s)\n", reached ? "yes" : "no", hover);
+                CHECK(reached, "walking off the end of the tunnel drops you into the core");
+                CHECK(hover < 0.05f, "never standing on air on the way");
+            }
+        }
+        /* walking over a cave mouth: you drop in, you do not float across the opening */
+        {
+            v3 into = v3_tangent(v3_sub(c->seg[1].b, c->seg[0].a), c->mouth[0]);
+            into = v3_norm(into);
+            v3 back = v3_norm(v3_sub(c->mouth[0], v3_scale(into, 6.0f / b->radius)));
+            player p; memset(&p, 0, sizeof p);
+            p.dom = moons[m];
+            p.pos = v3_add(b->pos, v3_scale(back, world_surface(&w, moons[m], back) + PLAYER_HALF_HEIGHT + 0.5f));
+            p.up = p.body_up = back; p.facing = p.body_fwd = into;
+            player_input in; memset(&in, 0, sizeof in);
+            float deepest = 0, hover = 0;
+            for (int i = 0; i < 600; i++) {
+                v3 f = v3_norm(v3_tangent(v3_sub(v3_add(b->pos, c->seg[3].b), p.pos), p.up));
+                in.cam_forward = in.view_forward = f; in.view_up = p.up; in.my = 1;
+                player_update(&p, &w, &in, DT);
+                v3 rel = v3_sub(p.pos, b->pos);
+                float dp = moon_depth(&w, moons[m], rel);
+                if (dp > deepest) deepest = dp;
+                if (p.grounded && !moon_support_probe(&w, moons[m], rel)) hover += DT;
+            }
+            printf("     (walking into mouth 0 reached %.1f underground, grounded over nothing %.2f s)\n", deepest, hover);
+            CHECK(deepest > 3.0f, "walking into a cave mouth takes you underground");
+            CHECK(hover < 0.05f, "never standing on air at the mouth");
         }
         /* the core: weightless, free look, floating, and thrust moves you */
         {

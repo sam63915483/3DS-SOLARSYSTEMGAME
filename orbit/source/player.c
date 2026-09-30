@@ -71,6 +71,35 @@ static void switch_frame(player *p, const world *w, int to) {
     p->dom = to;
 }
 
+/* Rock straight below the centre within reach (a 3-unit probe allows slopes up to about 70
+   degrees but not the lip of a pit or the end of a tunnel). */
+#define SUPPORT_REACH 3.0f
+static int moon_support(const world *w, int i, v3 rel, v3 up, float reach) {
+    for (float s = 0.3f; s <= reach; s += 0.15f)
+        if (moon_field(w, i, v3_sub(rel, v3_scale(up, s))) > 0) return 1;
+    return 0;
+}
+
+/* Distance from rel along dir to real rock, or -1 if there is none within max_s. The moon's
+   field is only a lower bound on the distance to rock (rock is terrain AND not-tunnel, and
+   over a carved opening it still "sees" the terrain surface that was dug away), so contacts
+   are measured by marching and bisecting on the sign of the field, never its value. */
+static float rock_along(const world *w, int i, v3 rel, v3 dir, float max_s) {
+    float prev = 0;
+    for (float s = 0.1f; s <= max_s + 1e-4f; s += 0.1f) {
+        if (moon_field(w, i, v3_add(rel, v3_scale(dir, s))) > 0) {
+            float lo = prev, hi = s;
+            for (int k = 0; k < 5; k++) {
+                float mid = 0.5f * (lo + hi);
+                if (moon_field(w, i, v3_add(rel, v3_scale(dir, mid))) > 0) hi = mid; else lo = mid;
+            }
+            return hi;
+        }
+        prev = s;
+    }
+    return -1;
+}
+
 /* Contact with a carved moon: the player is a sphere of radius PLAYER_HALF_HEIGHT pushed out
    of the rock along the field's gradient, and snapped back onto it when walking. Returns 1
    when the contact is under the feet (ground), 0 for walls, ceilings and no contact. */
@@ -83,9 +112,13 @@ static int moon_contact(player *p, const world *w, int i, int jumped) {
     {
         v3 head = v3_add(rel, v3_scale(up, 0.55f));
         float gap = -moon_field(w, i, head) - 0.7f;
+        v3 g = moon_grad_wide(w, i, head, 0.5f);
+        v3 n = v3_len(g) > 1e-5f ? v3_norm(v3_scale(g, -1.0f)) : v3_scale(up, -1.0f);
+        if (gap < 0) {   /* the field says close: measure it for real */
+            float s = rock_along(w, i, head, v3_scale(n, -1.0f), 0.8f);
+            gap = s < 0 ? 1.0f : s - 0.7f;
+        }
         if (gap < 0) {
-            v3 g = moon_grad_wide(w, i, head, 0.5f);
-            v3 n = v3_len(g) > 1e-5f ? v3_norm(v3_scale(g, -1.0f)) : v3_scale(up, -1.0f);
             p->pos = v3_add(p->pos, v3_scale(n, -gap));
             rel = v3_sub(p->pos, b->pos);
             float into = v3_dot(p->vel, n);
@@ -96,11 +129,20 @@ static int moon_contact(player *p, const world *w, int i, int jumped) {
        so small bumps read as bumps, not walls */
     float d = moon_field(w, i, rel);
     float gap = -d - PLAYER_HALF_HEIGHT;   /* clearance between the sphere and the rock */
-    int snap = p->grounded && !jumped && i == p->dom;
+    /* ground needs rock under the centre: touching the lip of a drop with the body out over it
+       is not standing, so there is no snap and no floor and you fall */
+    int supported = moon_support(w, i, rel, up, SUPPORT_REACH);
+    int snap = p->grounded && !jumped && i == p->dom && supported;
     if (gap > (snap ? GROUND_SNAP : 0.0f)) return 0;
     v3 g = moon_grad_wide(w, i, rel, 0.5f);
     v3 n = v3_len(g) > 1e-5f ? v3_norm(v3_scale(g, -1.0f)) : up;   /* out of the rock */
-    int floor_like = v3_dot(n, up) > 0.17f;   /* up to about 80 degrees counts as ground: walking follows it */
+    {   /* the field only bounds the distance: measure the real gap toward the rock it points at */
+        float reach = PLAYER_HALF_HEIGHT + (snap ? GROUND_SNAP : 0.0f) + 0.05f;
+        float s = rock_along(w, i, rel, v3_scale(n, -1.0f), reach);
+        if (s < 0) return 0;   /* a ghost: the surface it saw was carved away */
+        gap = s - PLAYER_HALF_HEIGHT;
+    }
+    int floor_like = supported && v3_dot(n, up) > 0.17f;   /* up to about 80 degrees counts as ground: walking follows it */
     if (!floor_like && p->grounded && !jumped && gap < 0) {
         /* a wall in the way while walking: if there is room a step up, take the step */
         v3 lifted = v3_add(rel, v3_scale(up, 0.6f));
@@ -201,6 +243,7 @@ void player_update(player *p, const world *w, const player_input *in, float dt) 
             p->thrusting = 1;
         }
         if (p->in_water) p->vel = v3_scale(p->vel, 1.0f - ease(2.0f, dt));   /* splashdown drag */
+        if (p->in_core) p->vel = v3_scale(p->vel, 1.0f - ease(0.8f, dt));    /* weightless drift settles */
         /* in the air the model follows the camera heading */
         move = v3_(0, 0, 0); mlen = 0;
         p->move_dir = move;
@@ -227,9 +270,10 @@ void player_update(player *p, const world *w, const player_input *in, float dt) 
             if (i == p->dom) {
                 v3 rel = v3_sub(p->pos, b->pos);
                 p->in_cave = moon_depth(w, i, rel) > 1.0f;
-                /* the zero-g zone starts a few units before the cavern, with hysteresis so it
-                   cannot flicker at the edge; in it nothing counts as floor, you float in */
-                float zone = b->caves.core_r + (p->in_core ? CORE_ZONE + 2.0f : CORE_ZONE);
+                /* the zero-g zone begins just inside the cavern wall (gravity pulls you in over
+                   the edge first), with hysteresis so it cannot flicker; in it nothing counts
+                   as floor */
+                float zone = b->caves.core_r + (p->in_core ? 1.5f : -1.0f);
                 p->in_core = v3_len(rel) < zone;
             }
             int floor = moon_contact(p, w, i, jumped);
