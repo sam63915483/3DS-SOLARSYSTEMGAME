@@ -124,6 +124,9 @@ static void sensors_read(float *pitch, float *yaw, float dt) {
     *yaw = GYRO_YAW_SIGN * y * to_rad;
 }
 
+/* the default 32 KB main-thread stack is tight for citro3d and the mesh builders */
+u32 __stacksize__ = 256 * 1024;
+
 int main(void) {
     gfxInitDefault();
     C3D_Init(C3D_DEFAULT_CMDBUF_SIZE);
@@ -137,13 +140,13 @@ int main(void) {
     hud_splash(bottom, "BUILDING THE WORLD...");
     C3D_FrameEnd(0);
 
-    world w; world_init(&w);
-    player p; player_spawn(&p, &w, BODY_START);
-    camera cam; camera_init(&cam, &p);
+    static world w; world_init(&w);   /* the world is far too big for the 32 KB main stack */
+    static player p; player_spawn(&p, &w, BODY_START);
+    static camera cam; camera_init(&cam, &p);
     render_init(&w);
-    fishing fish; fishing_init(&fish);
-    school sch; school_init(&sch);
-    fireflies ff; fireflies_init(&ff);
+    static fishing fish; fishing_init(&fish);
+    static school sch; school_init(&sch);
+    static fireflies ff; fireflies_init(&ff);
 
     u64 last = osGetTime();
     float fps = 60;
