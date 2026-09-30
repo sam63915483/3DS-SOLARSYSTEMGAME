@@ -25,26 +25,26 @@ v3 world_grid_dir(const world *w, int i, int ring, int seg) {
 }
 
 void world_init(world *w) {
-    /* moons are half their planet's radius, as close in as they can be while their inner edge
-       still clears the atmosphere shell by 35+ units and their own pull wins for 20-40 units
-       above the surface; planets are spaced so no moon's path can ever reach a neighbour */
+    /* moons are half their planet's radius with surface gravity about 9 (planets are 13-15), on
+       orbits wide enough that the planet's tidal pull leaves most of that gravity intact near the
+       surface; planets are spaced so no moon's path can reach the sun or a neighbour's moon */
     static const body defs[BODY_COUNT] = {
         { .name = "Sun",     .radius = 100.0f, .mu = MU_SUN,    .parent = -1,           .emissive = 1, .terrain = TERRAIN_SUN,
           .rings = 32, .segs = 48, .seed = 11u },
-        { .name = "Ember",   .radius = 80.0f,  .mu = 96000.0f,  .parent = BODY_SUN,     .orbit_r = 400.0f,  .orbit_phase = 0.6f,
+        { .name = "Ember",   .radius = 80.0f,  .mu = 96000.0f,  .parent = BODY_SUN,     .orbit_r = 520.0f,  .orbit_phase = 0.6f,
           .terrain = TERRAIN_EMBER,   .amp = 6.0f,  .freq = 2.4f, .sea_level = -9.0f, .liquid = 0, .rings = 40, .segs = 60, .seed = 23u,
           .atmo = 0xE09058FFu, .atmo_h = 24.0f },
-        { .name = "Verdant", .radius = 128.0f, .mu = 212992.0f, .parent = BODY_SUN,     .orbit_r = 1100.0f, .orbit_phase = 2.4f,
+        { .name = "Verdant", .radius = 128.0f, .mu = 212992.0f, .parent = BODY_SUN,     .orbit_r = 1450.0f, .orbit_phase = 2.4f,
           .terrain = TERRAIN_VERDANT, .amp = 10.0f, .freq = 2.2f, .sea_level = -1.0f, .liquid = 1, .rings = 64, .segs = 96, .seed = 37u,
           .atmo = 0x6AA0F0FFu, .atmo_h = 45.0f },
-        { .name = "Frost",   .radius = 96.0f,  .mu = 129024.0f, .parent = BODY_SUN,     .orbit_r = 1900.0f, .orbit_phase = 4.4f,
+        { .name = "Frost",   .radius = 96.0f,  .mu = 129024.0f, .parent = BODY_SUN,     .orbit_r = 2450.0f, .orbit_phase = 4.4f,
           .terrain = TERRAIN_FROST,   .amp = 5.0f,  .freq = 2.4f, .sea_level = -1.0f, .liquid = 0, .rings = 48, .segs = 72, .seed = 51u,
           .atmo = 0xB8D0F0FFu, .atmo_h = 30.0f },
-        { .name = "Cinder",  .radius = 40.0f,  .mu = 9600.0f,   .parent = BODY_EMBER,   .orbit_r = 190.0f,  .orbit_phase = 1.1f, .tilt = 0.35f,
+        { .name = "Cinder",  .radius = 40.0f,  .mu = 14400.0f,  .parent = BODY_EMBER,   .orbit_r = 285.0f,  .orbit_phase = 1.1f, .tilt = 0.35f,
           .terrain = TERRAIN_MOON,    .amp = 3.2f,  .freq = 3.0f, .sea_level = -100.0f, .liquid = 0, .rings = 40, .segs = 60, .seed = 61u },
-        { .name = "Fern",    .radius = 64.0f,  .mu = 24576.0f,  .parent = BODY_VERDANT, .orbit_r = 280.0f,  .orbit_phase = 3.9f, .tilt = 0.5f,
+        { .name = "Fern",    .radius = 64.0f,  .mu = 36864.0f,  .parent = BODY_VERDANT, .orbit_r = 420.0f,  .orbit_phase = 3.9f, .tilt = 0.5f,
           .terrain = TERRAIN_MOON,    .amp = 5.0f,  .freq = 3.0f, .sea_level = -100.0f, .liquid = 0, .rings = 48, .segs = 72, .seed = 67u },
-        { .name = "Sleet",   .radius = 48.0f,  .mu = 13824.0f,  .parent = BODY_FROST,   .orbit_r = 220.0f,  .orbit_phase = 5.3f, .tilt = 0.25f,
+        { .name = "Sleet",   .radius = 48.0f,  .mu = 20736.0f,  .parent = BODY_FROST,   .orbit_r = 330.0f,  .orbit_phase = 5.3f, .tilt = 0.25f,
           .terrain = TERRAIN_MOON,    .amp = 4.0f,  .freq = 3.0f, .sea_level = -100.0f, .liquid = 0, .rings = 44, .segs = 66, .seed = 71u },
     };
     w->t = 0;
@@ -96,23 +96,20 @@ v3 world_gravity_at(const world *w, v3 p) {
     return g;
 }
 
-/* Walk down from the sun: a child owns the space inside its sphere of influence, the
-   distance where its own pull beats the parent's tidal pull, r = orbit * cbrt(mu / 2 mu_parent).
-   Comparing raw pulls instead would leave a moon almost no room on its planet-facing side. */
+/* A body owns the space inside its sphere of influence, the distance where its own pull beats
+   its parent's tidal pull, r = orbit * cbrt(mu / 2 mu_parent). When spheres overlap the smallest
+   (most local) one wins, so a moon owns its space even where its orbit pokes outside the
+   planet's sphere. Comparing raw pulls instead would leave a moon almost no room on its
+   planet-facing side. */
 int world_dominant(const world *w, v3 p) {
-    int cur = BODY_SUN;
-    for (;;) {
-        int next = -1; float best = 1e30f;
-        for (int i = 0; i < BODY_COUNT; i++) {
-            const body *b = &w->b[i];
-            if (b->parent != cur) continue;
-            float d = v3_len(v3_sub(p, b->pos));
-            float soi = b->orbit_r * cbrtf(b->mu / (2.0f * w->b[cur].mu));
-            if (d < soi && d < best) { best = d; next = i; }
-        }
-        if (next < 0) return cur;
-        cur = next;
+    int best = BODY_SUN; float best_soi = 1e30f;
+    for (int i = 0; i < BODY_COUNT; i++) {
+        const body *b = &w->b[i];
+        if (b->parent < 0) continue;
+        float soi = b->orbit_r * cbrtf(b->mu / (2.0f * w->b[b->parent].mu));
+        if (soi < best_soi && v3_len(v3_sub(p, b->pos)) < soi) { best_soi = soi; best = i; }
     }
+    return best;
 }
 
 v3 world_frame_accel(const world *w, int i) {

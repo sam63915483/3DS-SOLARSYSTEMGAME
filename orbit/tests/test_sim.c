@@ -33,7 +33,14 @@ int main(void) {
             CHECK_NEAR(b->radius / par->radius, 0.5f, 1e-3f, "moon is half its planet's radius");
             CHECK(b->atmo == 0, "moon has no atmosphere");
             CHECK(b->orbit_r - b->radius - b->amp > par->radius + par->atmo_h + 30.0f, "moon's inner edge clears the planet's atmosphere by 30+ units");
-            CHECK(b->orbit_r < par->radius * 2.5f, "moon orbits close to its planet");
+            CHECK(b->orbit_r < par->radius * 3.6f, "moon orbits fairly close to its planet");
+            /* the moon's pull must dominate the tidal pull even on the planet-facing side */
+            v3 tw = v3_norm(v3_sub(par->pos, b->pos));
+            v3 hover = v3_add(b->pos, v3_scale(tw, b->radius + b->amp + 20.0f));
+            v3 felt = v3_sub(world_gravity_at(&w, hover), world_frame_accel(&w, moons[m]));
+            CHECK(v3_dot(felt, v3_scale(tw, -1.0f)) > 2.5f, "20 units above the planet-facing side the moon still pulls down firmly");
+            float reach = b->orbit_r + b->radius + b->amp;
+            CHECK(v3_len(par->pos) - reach > w.b[BODY_SUN].radius + 60.0f, "moon's orbit never reaches the sun");
             /* the planet-facing side is the worst case for owning the space above the surface */
             v3 towards = v3_norm(v3_sub(par->pos, b->pos));
             v3 near_surface = v3_add(b->pos, v3_scale(towards, b->radius + b->amp + 20.0f));
