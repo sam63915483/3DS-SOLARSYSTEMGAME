@@ -51,7 +51,7 @@ int main(void) {
         memset(&in, 0, sizeof in);
         camera_input cin;
         memset(&cin, 0, sizeof cin);
-        if (p.grounded) {
+        if (player_on_foot(&p)) {
             /* the pad looks around, A walks where the camera points, X jumps */
             cin.look_x = px; cin.look_y = py;
             in.mx = 0; in.my = (kHeld & KEY_A) ? 1.0f : 0.0f;

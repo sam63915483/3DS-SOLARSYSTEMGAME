@@ -35,7 +35,7 @@ void hud_draw(C3D_RenderTarget *bottom, const world *w, const player *p, const c
     font_draw(label, BTN_X + (BTN_W - font_width(label, 1)) / 2, BTN_Y + 7, 1, white);
 
     /* status */
-    snprintf(buf, sizeof buf, "%s  %s", b->name, p->grounded ? "GROUNDED" : (p->thrusting ? "THRUST" : "FLYING"));
+    snprintf(buf, sizeof buf, "%s  %s", b->name, p->swimming ? "SWIMMING" : (p->grounded ? (p->in_water ? "WADING" : "GROUNDED") : (p->thrusting ? "THRUST" : "FLYING")));
     font_draw(buf, 8, 40, 2, white);
     snprintf(buf, sizeof buf, "SPD %.1f  ALT %.1f  G %.1f", p->speed, p->altitude, v3_len(world_gravity_at(w, p->pos)));
     font_draw(buf, 8, 62, 2, white);
@@ -52,7 +52,7 @@ void hud_draw(C3D_RenderTarget *bottom, const world *w, const player *p, const c
 
     /* controls */
     C2D_DrawRectSolid(0, 152, 0, 320, 1, C2D_Color32(0x30, 0x34, 0x44, 0xFF));
-    if (p->grounded) {
+    if (player_on_foot(p)) {
         font_draw("PAD  LOOK       A  WALK", 8, 160, 1.5f, dim);
         font_draw("X  JUMP", 8, 176, 1.5f, dim);
         font_draw("(VIEW BUTTON: FIRST PERSON)", 8, 192, 1.5f, dim);

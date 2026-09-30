@@ -17,10 +17,13 @@ typedef struct {
     int idx_count;
 } mesh;
 
-/* Body i's surface: an indexed sphere displaced by the terrain height, coloured by biome. */
-mesh mesh_planet(const world *w, int i, int rings, int segs);
-/* Trees, rocks and shards scattered over body i, in coordinates relative to its centre. */
-mesh mesh_props(const world *w, int i);
+/* Body i's surface: an indexed sphere displaced by its height grid, coloured by biome. */
+mesh mesh_planet(const world *w, int i);
+/* Translucent sea surface for body i at its sea radius (indexed sphere). Empty if no sea. */
+mesh mesh_water(const world *w, int i, uint32_t col);
+/* Trees, rocks, grass and shards on body i whose direction falls in the given octant
+   (0..7, bits: x negative, y negative, z negative), relative to the body's centre. */
+mesh mesh_props(const world *w, int i, int octant);
 /* Axis-aligned box centred on the origin. */
 mesh mesh_box(float sx, float sy, float sz, uint32_t col);
 /* Unit cone: base circle of radius 1 at y = 0, apex at y = 1. */

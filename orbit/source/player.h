@@ -1,4 +1,4 @@
-/* Third-person player: walks on planets, flies like a ship once airborne. */
+/* Third-person player: walks on planets, swims in their seas, flies like a ship once airborne. */
 #ifndef PLAYER_H
 #define PLAYER_H
 #include "world.h"
@@ -10,6 +10,8 @@ typedef struct {
     v3 vel;          /* relative to the dominant body */
     int dom;         /* dominant body index */
     int grounded;
+    int swimming;    /* floating at the sea surface: ground controls, no gravity */
+    int in_water;    /* any part of the body below the sea surface */
     int thrusting;   /* any jet firing */
     int jet_up, jet_down, jet_fwd;  /* which jets are firing this frame */
     float jet_roll;  /* -1..1 roll jets (visual only) */
@@ -23,7 +25,7 @@ typedef struct {
 } player;
 
 typedef struct {
-    float mx, my;      /* circle pad while grounded, -1..1, my > 0 is forward */
+    float mx, my;      /* walk input while grounded or swimming, -1..1, my > 0 is forward */
     int jump_pressed;  /* X went down this frame */
     int thrust_fwd;    /* A held in the air: thrust along view_forward */
     int thrust_up;     /* X held in the air: thrust along view_up */
@@ -37,5 +39,7 @@ typedef struct {
 
 void player_spawn(player *p, const world *w, int body);
 void player_update(player *p, const world *w, const player_input *in, float dt);
+/* True when the player should use ground-style controls and camera. */
+static inline int player_on_foot(const player *p) { return p->grounded || p->swimming; }
 
 #endif

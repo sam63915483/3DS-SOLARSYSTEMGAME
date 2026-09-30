@@ -23,7 +23,8 @@ static C3D_LightEnv lightEnv;
 static C3D_Light light;
 static C3D_LightLut lutPhong;
 
-static gpu_mesh bodies[BODY_COUNT], props[BODY_COUNT], astro_body, astro_arm, astro_leg, flame_outer, flame_inner, stars;
+static gpu_mesh bodies[BODY_COUNT], props[BODY_COUNT][8], water[BODY_COUNT];
+static gpu_mesh astro_body, astro_arm, astro_leg, flame_outer, flame_inner, stars;
 
 static const C3D_Material mat_lit = {
     { 0.30f, 0.30f, 0.36f },  /* ambient */
@@ -76,12 +77,10 @@ void render_init(const world *w) {
     C3D_LightInit(&light, &lightEnv);
     C3D_LightColor(&light, 1.0f, 0.98f, 0.92f);
 
-    /* mesh density scales with size so the hills stay smooth; indexed, so cheap to draw */
-    static const int rings_for[BODY_COUNT] = { 32, 36, 56, 44 };
-    static const int segs_for[BODY_COUNT] = { 48, 54, 84, 66 };
     for (int i = 0; i < BODY_COUNT; i++) {
-        bodies[i] = upload(mesh_planet(w, i, rings_for[i], segs_for[i]));
-        props[i] = upload(mesh_props(w, i));
+        bodies[i] = upload(mesh_planet(w, i));
+        water[i] = upload(mesh_water(w, i, 0x2058B4C4u));   /* deep blue, alpha 196 */
+        for (int o = 0; o < 8; o++) props[i][o] = upload(mesh_props(w, i, o));
     }
     /* player: model +z is forward, +y is up, origin at the middle of the 1.8 tall body */
     astro_body = upload(mesh_astronaut(ASTRO_BODY));
@@ -178,8 +177,8 @@ static void draw_player(const player *p, const camera *c, float time) {
 
     /* the model uses the camera's smoothed basis so both roll together when "up" changes;
        in flight it points along the view like a ship */
-    v3 up = p->grounded ? c->up : c->view_up;
-    v3 fwd = p->grounded ? v3_tangent(p->facing, up) : c->view;
+    v3 up = player_on_foot(p) ? c->up : c->view_up;
+    v3 fwd = player_on_foot(p) ? v3_tangent(p->facing, up) : c->view;
     fwd = v3_len(fwd) < 1e-3f ? v3_any_perp(up) : v3_norm(fwd);
     v3 right = v3_cross(up, fwd);
     C3D_Mtx base, m, off;
@@ -190,7 +189,7 @@ static void draw_player(const player *p, const camera *c, float time) {
 
     /* limbs: walk cycle on the ground, swept back in flight */
     float swing, arm_swing, arm_splay, leg_back;
-    if (p->grounded) {
+    if (player_on_foot(p)) {
         float k = p->speed / 8.0f; if (k > 1) k = 1;
         swing = sinf(p->anim) * 0.7f * k;
         arm_swing = -swing * 0.7f; arm_splay = 0.12f; leg_back = 0;
@@ -200,7 +199,7 @@ static void draw_player(const player *p, const camera *c, float time) {
     draw_limb(&astro_leg, &base, v3_(-0.17f, -0.15f, 0), swing + leg_back, 0);
     draw_limb(&astro_leg, &base, v3_(0.17f, -0.15f, 0), -swing + leg_back, 0);
     draw_limb(&astro_arm, &base, v3_(-0.40f, 0.40f, 0), arm_swing, arm_splay);
-    draw_limb(&astro_arm, &base, v3_(0.40f, 0.40f, 0), -arm_swing * (p->grounded ? 1 : -1), -arm_splay);
+    draw_limb(&astro_arm, &base, v3_(0.40f, 0.40f, 0), -arm_swing * (player_on_foot(p) ? 1 : -1), -arm_splay);
 
     /* jets: exhaust goes opposite to the thrust. pack plate spans y -0.2..0.44, z -0.39..-0.19;
        the nozzle is at the bottom centre, the tanks top out at y 0.5 */
@@ -248,15 +247,39 @@ void render_scene(const world *w, const player *p, const camera *c, float time) 
         mtx_translate(&model, w->b[i].pos);
         draw(&bodies[i], &model, w->b[i].emissive ? &mat_glow : &mat_lit);
         /* props are a few units tall: skip them once the planet is far enough that they
-           would be smaller than a pixel anyway */
-        float gap = v3_len(v3_sub(c->pos, w->b[i].pos)) - w->b[i].radius;
-        if (props[i].count && gap < 700.0f) draw(&props[i], &model, &mat_lit);
+           would be smaller than a pixel anyway, and skip the octants facing away from us */
+        v3 to_cam = v3_sub(c->pos, w->b[i].pos);
+        float gap = v3_len(to_cam) - w->b[i].radius;
+        if (gap < 700.0f) {
+            v3 d = v3_norm(to_cam);
+            for (int o = 0; o < 8; o++) {
+                if (!props[i][o].count) continue;
+                v3 od = v3_norm(v3_((o & 1) ? -1 : 1, (o & 2) ? -1 : 1, (o & 4) ? -1 : 1));
+                if (v3_dot(od, d) < -0.25f) continue;   /* over the horizon */
+                draw(&props[i][o], &model, &mat_lit);
+            }
+        }
     }
     draw_player(p, c, time);
+
+    /* seas: translucent, drawn last, both sides visible, no depth writes */
+    C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA);
+    C3D_DepthTest(true, GPU_GREATER, GPU_WRITE_COLOR);
+    C3D_CullFace(GPU_CULL_NONE);
+    for (int i = 0; i < BODY_COUNT; i++) {
+        if (!water[i].count) continue;
+        mtx_translate(&model, w->b[i].pos);
+        draw(&water[i], &model, &mat_lit);
+    }
+    C3D_CullFace(GPU_CULL_BACK_CCW);
+    C3D_DepthTest(true, GPU_GREATER, GPU_WRITE_ALL);
 }
 
 void render_fini(void) {
-    for (int i = 0; i < BODY_COUNT; i++) { gpu_free(&bodies[i]); gpu_free(&props[i]); }
+    for (int i = 0; i < BODY_COUNT; i++) {
+        gpu_free(&bodies[i]); gpu_free(&water[i]);
+        for (int o = 0; o < 8; o++) gpu_free(&props[i][o]);
+    }
     gpu_free(&astro_body); gpu_free(&astro_arm); gpu_free(&astro_leg);
     gpu_free(&flame_outer); gpu_free(&flame_inner); gpu_free(&stars);
     shaderProgramFree(&program);

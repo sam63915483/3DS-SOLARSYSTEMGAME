@@ -53,7 +53,7 @@ void camera_init(camera *c, const player *p) {
     c->ground_pitch = 0;
     c->first_person = 0;
     c->fp = 0;
-    c->was_grounded = p->grounded;
+    c->was_grounded = player_on_foot(p);
     c->pos = v3_add(v3_add(p->pos, v3_scale(c->up, CAM_UP)), v3_scale(c->fwd, -CAM_BACK));
     c->target = p->pos;
 }
@@ -61,7 +61,7 @@ void camera_init(camera *c, const player *p) {
 void camera_update(camera *c, const world *w, const player *p, const camera_input *in, float dt) {
     c->up = v3_norm(v3_lerp(c->up, p->up, ease(4.0f, dt)));
 
-    if (p->grounded) {
+    if (player_on_foot(p)) {
         if (!c->was_grounded) {
             /* just landed: keep looking the way we were flying */
             v3 h = v3_tangent(c->view, c->up);
@@ -109,6 +109,6 @@ void camera_update(camera *c, const world *w, const player *p, const camera_inpu
         v3 h = v3_tangent(c->view, c->up);
         if (v3_len(h) > 1e-3f) c->fwd = v3_norm(h);
     }
-    c->was_grounded = p->grounded;
+    c->was_grounded = player_on_foot(p);
     place(c, w, p, dt);
 }

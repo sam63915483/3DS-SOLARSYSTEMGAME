@@ -181,13 +181,26 @@ int main(void) {
             float h = world_height(&w, BODY_START, d);
             if (h == 0) sea++; else if (h > 0) land++; else below++;
         }
-        CHECK(sea > 50 && land > 50, "Verdant has both sea and land");
-        CHECK(below == 0, "nothing on a sea planet is below sea level");
+        (void)sea; (void)below;
+        CHECK(land > 50, "Verdant has land");
+        {
+            int wet = 0, frost_below = 0;
+            float sea_r = world_sea_radius(&w, BODY_START);
+            for (int k = 0; k < 400; k++) {
+                v3 d = v3_norm(v3_(noise_hashf(k, 0, 0, 5u) * 2 - 1, noise_hashf(k, 1, 0, 5u) * 2 - 1, noise_hashf(k, 2, 0, 5u) * 2 - 1));
+                if (world_surface(&w, BODY_START, d) < sea_r - 0.5f) wet++;
+                if (world_height(&w, 3, d) < w.b[3].sea_level - 1e-3f) frost_below++;
+            }
+            CHECK(wet > 50, "Verdant has real sea floor below the water surface");
+            CHECK(frost_below == 0, "Frost ice sheet is flat: nothing below its level");
+            v3 gd = world_grid_dir(&w, BODY_START, 10, 7);
+            CHECK_NEAR(world_height(&w, BODY_START, gd), world_grid_height(&w, BODY_START, 10, 7), 1e-3f, "interpolated height matches the mesh vertex");
+        }
         CHECK(world_height(&w, BODY_SUN, d0) == 0, "the sun is a perfect sphere");
     }
 
     /* planet mesh: indexed, winding faces outward, normals unit */
-    mesh s = mesh_planet(&w, BODY_START, 16, 24);
+    mesh s = mesh_planet(&w, BODY_START);
     int bad = 0, badn = 0;
     for (int i = 0; i < s.idx_count; i += 3) {
         v3 a = v3_(s.v[s.idx[i]].pos[0], s.v[s.idx[i]].pos[1], s.v[s.idx[i]].pos[2]);
@@ -204,15 +217,48 @@ int main(void) {
     CHECK(badn == 0, "planet normals are unit length");
     CHECK(s.count <= 65535, "planet vertex count fits 16-bit indices");
     mesh_free(&s);
-    mesh pr = mesh_props(&w, BODY_START);
-    CHECK(pr.count > 1000 && pr.count % 3 == 0, "Verdant has a batch of props");
-    int wet = 0;
-    for (int k = 0; k < pr.count; k += 3) {
-        v3 a = v3_(pr.v[k].pos[0], pr.v[k].pos[1], pr.v[k].pos[2]);
-        if (v3_len(a) < w.b[BODY_START].radius - 1.0f) wet++;   /* sunk below sea level */
+    {
+        int total = 0, wet = 0;
+        float sea_r = world_sea_radius(&w, BODY_START);
+        for (int o = 0; o < 8; o++) {
+            mesh pr = mesh_props(&w, BODY_START, o);
+            total += pr.count;
+            for (int k = 0; k < pr.count; k += 3) {
+                v3 a = v3_(pr.v[k].pos[0], pr.v[k].pos[1], pr.v[k].pos[2]);
+                if (v3_len(a) < sea_r - 1.5f) wet++;   /* sunk below the water */
+            }
+            mesh_free(&pr);
+        }
+        CHECK(total > 1000 && total % 3 == 0, "Verdant has batches of props");
+        CHECK(wet == 0, "no props sit under the sea");
     }
-    CHECK(wet == 0, "no props sit below sea level");
-    mesh_free(&pr);
+
+    /* swimming: drop into deep water, float, jump out */
+    {
+        v3 deep = v3_(0, 1, 0); float deepest = 1e9f;
+        for (int k = 0; k < 2000; k++) {
+            v3 d = v3_norm(v3_(noise_hashf(k, 0, 0, 9u) * 2 - 1, noise_hashf(k, 1, 0, 9u) * 2 - 1, noise_hashf(k, 2, 0, 9u) * 2 - 1));
+            float h = world_height(&w, BODY_START, d);
+            if (h < deepest) { deepest = h; deep = d; }
+        }
+        CHECK(deepest < w.b[BODY_START].sea_level - 3.0f, "found deep water on Verdant");
+        player_spawn(&p, &w, BODY_START);
+        p.pos = v3_add(w.b[BODY_START].pos, v3_scale(deep, world_sea_radius(&w, BODY_START) + 3.0f));
+        p.grounded = 0; p.vel = v3_(0, 0, 0);
+        memset(&in, 0, sizeof in); in.cam_forward = v3_any_perp(deep); in.view_forward = in.cam_forward; in.view_up = deep;
+        for (int f = 0; f < 240; f++) { world_update(&w, DT); player_update(&p, &w, &in, DT); }
+        CHECK(p.swimming, "sinks into deep water and floats");
+        float depth = world_sea_radius(&w, BODY_START) - v3_len(v3_sub(p.pos, w.b[BODY_START].pos));
+        CHECK(depth > 0.2f && depth < 1.2f, "floats with the body about half under");
+        in.my = 1;
+        v3 before_swim = p.pos;
+        for (int f = 0; f < 60; f++) { world_update(&w, DT); player_update(&p, &w, &in, DT); }
+        CHECK(v3_len(v3_sub(p.pos, before_swim)) > 2.0f, "A paddles forward while swimming");
+        in.my = 0; in.jump_pressed = 1;
+        world_update(&w, DT); player_update(&p, &w, &in, DT);
+        in.jump_pressed = 0;
+        CHECK(!p.swimming && !p.grounded, "X jumps out of the water");
+    }
     mesh bx = mesh_box(1, 2, 3, 0xFFFFFFFF);
     bad = 0;
     for (int i = 0; i < bx.count; i += 3) {

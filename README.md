@@ -164,11 +164,15 @@ continuous. Planet orbital speed is derived from the sun's gravity, so the sun's
 player in a planet's frame is only the tidal remainder. Touching the sun respawns you.
 
 World: sun radius 100; planets radius 80/128/96 on orbits 320/620/940. Each planet has
-procedural terrain (a value-noise height field over the sphere in `world.c`, shared by
-rendering and collision, with a flattened sea on Verdant and Frost) and biome vertex colours.
-Props are built once per planet in `mesh.c`: on Verdant conifers and round trees in groves,
-grass tufts and boulders; on Ember big boulders; on Frost ice shard clusters and rocks. They
-are flat shaded and skipped once a planet is more than 700 units away. Planet meshes are
+procedural terrain: a value-noise height field baked into a lat/long grid in `world.c` that
+the mesh and the collision both read (collision interpolates the exact mesh triangles), with
+real basins. Verdant has a liquid sea drawn as a translucent sphere at sea level: you wade in
+the shallows, float and swim when it gets deep (A paddles, X jumps out). Frost has a flat
+ice sheet you walk on. Biome vertex colours per planet.
+Props are built once per planet in `mesh.c`, split into eight octant batches so only the
+batches facing the camera draw: tall spruces and round trees in groves, grass tufts and
+boulders on Verdant; charred spruces and big boulders on Ember; snowy spruces, ice shard
+clusters and rocks on Frost. Flat shaded, skipped once a planet is over 700 units away. Planet meshes are
 indexed. The astronaut is an articulated model (`mesh_astronaut`) with a walk cycle and a
 two-tank jetpack; flames are two-tone cones, and the air brake fires one along the direction
 of travel.

@@ -1,30 +1,37 @@
 #include "player.h"
 
 #define WALK_SPEED   8.0f
+#define WADE_FACTOR  0.55f
+#define SWIM_SPEED   3.5f
 #define JUMP_SPEED   9.0f
 #define THRUST      28.0f
 #define BRAKE_RATE   2.5f
 #define MAX_SPEED  150.0f
 #define GROUND_SNAP  0.5f
+#define SWIM_DEPTH   1.0f   /* centre this far below the surface: stop walking, start floating */
+#define FLOAT_DEPTH  0.55f  /* where the centre settles while floating */
 
-void player_spawn(player *p, const world *w, int body) {
+void player_spawn(player *p, const world *w, int bi) {
     /* stand where the sun is about 45 degrees above the horizon, on land */
-    v3 up = v3_norm(v3_add(v3_norm(v3_scale(w->b[body].pos, -1.0f)), v3_(0, 1, 0)));
+    v3 up = v3_norm(v3_add(v3_norm(v3_scale(w->b[bi].pos, -1.0f)), v3_(0, 1, 0)));
     {
+        const body *b = &w->b[bi];
         v3 axis = v3_any_perp(up), best = up;
-        float best_h = world_height_raw(w, body, up), want = 0.15f * w->b[body].amp;
+        float best_h = world_height_raw(w, bi, up), want = b->sea_level + 0.2f * b->amp;
         for (int k = 1; k < 64 && best_h < want; k++) {
             v3 c = v3_rotate(up, axis, 0.08f * k);
-            float h = world_height_raw(w, body, c);
+            float h = world_height_raw(w, bi, c);
             if (h > best_h) { best_h = h; best = c; }
         }
         up = best;
     }
-    p->dom = body;
+    p->dom = bi;
     p->up = up;
-    p->pos = v3_add(w->b[body].pos, v3_scale(up, world_surface(w, body, up) + PLAYER_HALF_HEIGHT));
+    p->pos = v3_add(w->b[bi].pos, v3_scale(up, world_surface(w, bi, up) + PLAYER_HALF_HEIGHT));
     p->vel = v3_(0, 0, 0);
     p->grounded = 1;
+    p->swimming = 0;
+    p->in_water = 0;
     p->thrusting = 0;
     p->jet_up = p->jet_down = p->jet_fwd = 0;
     p->jet_roll = 0;
@@ -51,6 +58,14 @@ void player_update(player *p, const world *w, const player_input *in, float dt) 
     p->pos = v3_add(p->pos, v3_sub(dom->pos, dom->prev));
     p->up = v3_norm(v3_sub(p->pos, dom->pos));
 
+    /* water: how deep is the centre of the body below the sea surface */
+    float sea_r = world_sea_radius(w, p->dom);
+    float dist_c = v3_len(v3_sub(p->pos, dom->pos));
+    float depth = sea_r > 0 ? sea_r - dist_c : -1.0f;
+    p->in_water = depth > -PLAYER_HALF_HEIGHT;
+    if (depth > SWIM_DEPTH) { p->swimming = 1; p->grounded = 0; }
+    else if (depth < 0.15f) p->swimming = 0;   /* well above the float depth: out of the water */
+
     /* camera-relative input in the tangent plane */
     v3 fwd = v3_tangent(in->cam_forward, p->up);
     fwd = v3_len(fwd) < 1e-4f ? v3_any_perp(p->up) : v3_norm(fwd);
@@ -65,9 +80,23 @@ void player_update(player *p, const world *w, const player_input *in, float dt) 
     p->jet_up = p->jet_down = p->jet_fwd = 0;
     p->jet_roll = 0;
     p->brake_dir = v3_(0, 0, 0);
-    if (p->grounded) {
+    if (p->swimming) {
+        /* float at the surface: slow paddling, a spring holds the depth */
         v3 vt = v3_tangent(p->vel, p->up);
-        vt = v3_lerp(vt, v3_scale(move, WALK_SPEED), ease(12.0f, dt));
+        vt = v3_lerp(vt, v3_scale(move, SWIM_SPEED), ease(5.0f, dt));
+        float want = (depth - FLOAT_DEPTH) * 3.0f;   /* positive: rise */
+        if (want > 4) want = 4;
+        if (want < -4) want = -4;
+        p->vel = v3_add(vt, v3_scale(p->up, want));
+        if (in->jump_pressed) {
+            p->vel = v3_add(p->vel, v3_scale(p->up, JUMP_SPEED * 0.9f));
+            p->swimming = 0;
+            jumped = 1;
+        }
+    } else if (p->grounded) {
+        v3 vt = v3_tangent(p->vel, p->up);
+        float speed = WALK_SPEED * (p->in_water ? WADE_FACTOR : 1.0f);
+        vt = v3_lerp(vt, v3_scale(move, speed), ease(12.0f, dt));
         p->vel = vt;
         if (in->jump_pressed) {
             p->vel = v3_add(p->vel, v3_scale(p->up, JUMP_SPEED));
@@ -92,6 +121,7 @@ void player_update(player *p, const world *w, const player_input *in, float dt) 
             p->brake_dir = v3_norm(p->vel);   /* exhaust goes the way we travel */
             p->thrusting = 1;
         }
+        if (p->in_water) p->vel = v3_scale(p->vel, 1.0f - ease(2.0f, dt));   /* splashdown drag */
         /* in the air the model follows the camera heading */
         move = v3_(0, 0, 0); mlen = 0;
         p->move_dir = move;
@@ -123,6 +153,7 @@ void player_update(player *p, const world *w, const player_input *in, float dt) 
         touching = 1;
     }
     if (!jumped) p->grounded = touching;
+    if (touching) p->swimming = 0;
 
     /* facing follows the input, stays tangent */
     if (mlen > 0.1f) p->facing = v3_lerp(p->facing, v3_norm(move), ease(10.0f, dt));
@@ -130,7 +161,7 @@ void player_update(player *p, const world *w, const player_input *in, float dt) 
     p->facing = v3_len(p->facing) < 1e-3f ? fwd : v3_norm(p->facing);
 
     p->speed = v3_len(p->vel);
-    if (p->grounded) p->anim += p->speed * 1.6f * dt;   /* walk cycle */
+    if (player_on_foot(p)) p->anim += p->speed * 1.6f * dt;   /* walk / paddle cycle */
     p->altitude = v3_len(v3_sub(p->pos, dom->pos)) - world_surface(w, p->dom, p->up) - PLAYER_HALF_HEIGHT;
     if (p->grounded || fabsf(p->altitude) < 0.01f) p->altitude = 0;   /* no -0.0 flicker on the HUD */
 }

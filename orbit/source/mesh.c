@@ -21,21 +21,19 @@ static v3 sphere_pt(int i, int rings, int j, int segs) {
     return v3_(sinf(th) * cosf(ph), cosf(th), sinf(th) * sinf(ph));
 }
 
-/* ---- planets: indexed sphere displaced by the terrain ---- */
+/* ---- indexed spheres ---- */
 
-mesh mesh_planet(const world *w, int bi, int rings, int segs) {
-    const body *b = &w->b[bi];
+/* Indexed sphere grid; radius_of(dir, ring, seg) gives each vertex its distance from the centre. */
+static mesh sphere_grid(int rings, int segs, float (*radius_of)(const void *, v3, int, int),
+                        uint32_t (*color_of)(const void *, v3, int, int), const void *ctx, int smooth_normals) {
     mesh m;
     m.count = (rings + 1) * segs;
     m.v = calloc(m.count, sizeof(vertex));
     m.idx = malloc(rings * segs * 6 * sizeof(uint16_t));
-
     for (int i = 0; i <= rings; i++) {
         for (int j = 0; j < segs; j++) {
             v3 dir = sphere_pt(i, rings, j, segs);
-            float raw = world_height_raw(w, bi, dir);
-            float h = (b->has_sea && raw < 0) ? 0 : raw;
-            put(&m.v[i * segs + j], v3_scale(dir, b->radius + h), v3_(0, 0, 0), world_color(w, bi, dir, raw));
+            put(&m.v[i * segs + j], v3_scale(dir, radius_of(ctx, dir, i, j)), dir, color_of(ctx, dir, i, j));
         }
     }
     uint16_t *o = m.idx;
@@ -50,19 +48,47 @@ mesh mesh_planet(const world *w, int bi, int rings, int segs) {
         }
     }
     m.idx_count = (int)(o - m.idx);
-    /* smooth normals from the faces */
-    for (int t = 0; t < m.idx_count; t += 3) {
-        vertex *va = &m.v[m.idx[t]], *vb = &m.v[m.idx[t + 1]], *vc = &m.v[m.idx[t + 2]];
-        v3 pa = vpos(va), n = v3_cross(v3_sub(vpos(vb), pa), v3_sub(vpos(vc), pa));
-        vertex *vs[3] = { va, vb, vc };
-        for (int k = 0; k < 3; k++) { vs[k]->nrm[0] += n.x; vs[k]->nrm[1] += n.y; vs[k]->nrm[2] += n.z; }
-    }
-    for (int k = 0; k < m.count; k++) {
-        v3 n = v3_(m.v[k].nrm[0], m.v[k].nrm[1], m.v[k].nrm[2]);
-        n = v3_len(n) > 1e-6f ? v3_norm(n) : v3_norm(vpos(&m.v[k]));
-        m.v[k].nrm[0] = n.x; m.v[k].nrm[1] = n.y; m.v[k].nrm[2] = n.z;
+    if (smooth_normals) {
+        for (int k = 0; k < m.count; k++) m.v[k].nrm[0] = m.v[k].nrm[1] = m.v[k].nrm[2] = 0;
+        for (int t = 0; t < m.idx_count; t += 3) {
+            vertex *va = &m.v[m.idx[t]], *vb = &m.v[m.idx[t + 1]], *vc = &m.v[m.idx[t + 2]];
+            v3 pa = vpos(va), n = v3_cross(v3_sub(vpos(vb), pa), v3_sub(vpos(vc), pa));
+            vertex *vs[3] = { va, vb, vc };
+            for (int k = 0; k < 3; k++) { vs[k]->nrm[0] += n.x; vs[k]->nrm[1] += n.y; vs[k]->nrm[2] += n.z; }
+        }
+        for (int k = 0; k < m.count; k++) {
+            v3 n = v3_(m.v[k].nrm[0], m.v[k].nrm[1], m.v[k].nrm[2]);
+            n = v3_len(n) > 1e-6f ? v3_norm(n) : v3_norm(vpos(&m.v[k]));
+            m.v[k].nrm[0] = n.x; m.v[k].nrm[1] = n.y; m.v[k].nrm[2] = n.z;
+        }
     }
     return m;
+}
+
+typedef struct { const world *w; int i; uint32_t col; float radius; } sphere_ctx;
+
+static float planet_radius(const void *c, v3 dir, int ring, int seg) {
+    const sphere_ctx *s = c; (void)dir;
+    return s->w->b[s->i].radius + world_grid_height(s->w, s->i, ring, seg);
+}
+static uint32_t planet_color(const void *c, v3 dir, int ring, int seg) {
+    const sphere_ctx *s = c; (void)ring; (void)seg;
+    return world_color(s->w, s->i, dir, world_height_raw(s->w, s->i, dir));
+}
+static float flat_radius(const void *c, v3 dir, int ring, int seg) { (void)dir; (void)ring; (void)seg; return ((const sphere_ctx *)c)->radius; }
+static uint32_t flat_color(const void *c, v3 dir, int ring, int seg) { (void)dir; (void)ring; (void)seg; return ((const sphere_ctx *)c)->col; }
+
+mesh mesh_planet(const world *w, int i) {
+    sphere_ctx c = { w, i, 0, 0 };
+    return sphere_grid(w->b[i].rings, w->b[i].segs, planet_radius, planet_color, &c, 1);
+}
+
+mesh mesh_water(const world *w, int i, uint32_t col) {
+    mesh empty = { 0, 0, 0, 0 };
+    float r = world_sea_radius(w, i);
+    if (r <= 0) return empty;
+    sphere_ctx c = { w, i, col, r };
+    return sphere_grid(32, 48, flat_radius, flat_color, &c, 0);
 }
 
 /* ---- props: small flat-shaded shapes appended to a growing triangle list ---- */
@@ -160,28 +186,40 @@ static void emit_blob(mesh *m, v3 c, v3 t1, v3 up, v3 t2, float rx, float ry, fl
     }
 }
 
-typedef struct { int trees, rocks, shards; uint32_t rock_a, rock_b; float rock_scale; } prop_plan;
+/* A tall spruce: tapered trunk and four stacked open cones. ~144 vertices. */
+static void emit_spruce(mesh *m, v3 base, v3 t1, v3 up, v3 t2, float s, uint32_t bark, uint32_t ca, uint32_t cb, float canopy_scale) {
+    emit_taper(m, base, t1, up, t2, 0.36f * s, 0.20f * s, 3.0f * s, bark);
+    float cs = canopy_scale;
+    emit_cone_open(m, v3_add(base, v3_scale(up, 1.8f * s)), t1, up, t2, 2.7f * s * cs, 3.2f * s, ca, cb);
+    emit_cone_open(m, v3_add(base, v3_scale(up, 3.7f * s)), t1, up, t2, 2.1f * s * cs, 2.8f * s, ca, cb);
+    emit_cone_open(m, v3_add(base, v3_scale(up, 5.5f * s)), t1, up, t2, 1.5f * s * cs, 2.4f * s, ca, cb);
+    emit_cone_open(m, v3_add(base, v3_scale(up, 7.1f * s)), t1, up, t2, 0.9f * s * cs, 2.0f * s, ca, cb);
+}
+
+typedef struct { int trees, rocks, shards, grass; uint32_t rock_a, rock_b; float rock_scale; } prop_plan;
 
 static prop_plan plan_for(terrain_kind t) {
-    prop_plan p = { 0, 0, 0, 0x787068FF, 0x625A50FF, 1.0f };
+    prop_plan p = { 0, 0, 0, 0, 0x787068FF, 0x625A50FF, 1.0f };
     switch (t) {
-    case TERRAIN_VERDANT: p.trees = 220; p.rocks = 110; p.rock_a = 0x8A8278FF; p.rock_b = 0x6E665CFF; break;
-    case TERRAIN_EMBER:   p.rocks = 190; p.rock_a = 0x6E3524FF; p.rock_b = 0x4E2418FF; p.rock_scale = 1.6f; break;
-    case TERRAIN_FROST:   p.rocks = 60; p.shards = 110; p.rock_a = 0xB4C2D2FF; p.rock_b = 0x94A6BAFF; break;
+    case TERRAIN_VERDANT: p.trees = 220; p.rocks = 110; p.grass = 1400; p.rock_a = 0x8A8278FF; p.rock_b = 0x6E665CFF; break;
+    case TERRAIN_EMBER:   p.trees = 80; p.rocks = 170; p.rock_a = 0x6E3524FF; p.rock_b = 0x4E2418FF; p.rock_scale = 1.6f; break;
+    case TERRAIN_FROST:   p.trees = 110; p.rocks = 60; p.shards = 90; p.rock_a = 0xB4C2D2FF; p.rock_b = 0x94A6BAFF; break;
     default: break;
     }
     return p;
 }
 
-mesh mesh_props(const world *w, int bi) {
+static int octant_of(v3 d) { return (d.x < 0 ? 1 : 0) | (d.y < 0 ? 2 : 0) | (d.z < 0 ? 4 : 0); }
+
+mesh mesh_props(const world *w, int bi, int octant) {
     const body *b = &w->b[bi];
     prop_plan plan = plan_for(b->terrain);
     mesh m = { 0, 0, 0, 0 };
-    int cap = plan.trees * 200 + plan.rocks * 130 + plan.shards * 80 + (plan.trees ? 500 * 9 : 0);
+    int cap = plan.trees * 180 + plan.rocks * 130 + plan.shards * 80 + plan.grass * 9;
     if (cap == 0) return m;
     m.v = calloc(cap, sizeof(vertex));
 
-    int want[4] = { plan.trees, plan.rocks, plan.shards, plan.trees ? 500 : 0 };
+    int want[4] = { plan.trees, plan.rocks, plan.shards, plan.grass };
     uint32_t seed = b->seed * 7919u + 3u;
     int k = 0;
     /* trees grow in groves: pick a few centres, then scatter most trees around them */
@@ -192,14 +230,14 @@ mesh mesh_props(const world *w, int bi) {
     }
     for (int kind = 0; kind < 4; kind++) {
         int placed = 0, guard = 0;
-        while (placed < want[kind] && guard++ < 40000) {
+        while (placed < want[kind] && guard++ < 60000) {
             k++;
             v3 dir;
             if (kind == 0 && noise_hashf(k, 20, kind, seed) < 0.75f) {
-                /* near a grove centre: offset a few degrees along two tangents */
+                /* near a grove centre: offset along two tangents */
                 v3 g = grove[noise_hash(k, 21, kind, seed) % 40];
                 v3 t1 = v3_any_perp(g), t2 = v3_cross(g, t1);
-                float spread = 14.0f / b->radius;   /* about 14 units */
+                float spread = 30.0f / b->radius;   /* about 30 units */
                 dir = v3_norm(v3_add(g, v3_add(v3_scale(t1, (noise_hashf(k, 22, kind, seed) - 0.5f) * 2 * spread),
                                                v3_scale(t2, (noise_hashf(k, 23, kind, seed) - 0.5f) * 2 * spread))));
             } else {
@@ -209,32 +247,37 @@ mesh mesh_props(const world *w, int bi) {
                 dir = v3_scale(dir, 1.0f / l);
             }
             float raw = world_height_raw(w, bi, dir);
-            float t = b->amp > 0 ? raw / b->amp : 0;
+            float t = b->amp > 0 ? (raw - b->sea_level) / b->amp : 0;
             if (kind == 0 && (t < 0.08f || t > 0.8f)) continue;   /* trees: not beach, not snow */
             if (kind == 3 && (t < 0.07f || t > 0.6f)) continue;   /* grass: on grass */
-            if (kind != 0 && b->has_sea && raw < 0.02f) continue;  /* nothing on water */
+            if (kind != 0 && kind != 3 && t < 0.02f) continue;     /* rocks and shards: dry land or ice */
+            placed++;                                              /* counts even if another octant draws it */
+            if (octant_of(dir) != octant) continue;
 
             /* local frame, rotated by a random angle for variety */
             v3 up = dir, t1 = v3_any_perp(up);
             t1 = v3_rotate(t1, up, noise_hashf(k, 3, kind, seed) * 6.2832f);
             v3 t2 = v3_cross(up, t1);
-            v3 base = v3_scale(dir, b->radius + world_height(w, bi, dir));
+            v3 base = v3_scale(dir, world_surface(w, bi, dir) - 0.3f);
             float s = 0.7f + noise_hashf(k, 4, kind, seed) * 0.7f;   /* size 0.7..1.4 */
             uint32_t pseed = seed ^ (uint32_t)(k * 2654435761u);
 
             if (kind == 0) {
-                int conifer = noise_hashf(k, 5, kind, seed) < 0.6f;
                 uint32_t bark = shade(0x6B4A2AFF, 0.85f + noise_hashf(k, 6, kind, seed) * 0.3f);
-                if (conifer) {
-                    uint32_t ga = shade(0x2F7A38FF, 0.9f + noise_hashf(k, 7, kind, seed) * 0.25f), gb = shade(ga, 0.8f);
-                    emit_taper(&m, base, t1, up, t2, 0.16f * s, 0.10f * s, 1.1f * s, bark);
-                    emit_cone_open(&m, v3_add(base, v3_scale(up, 0.7f * s)), t1, up, t2, 1.05f * s, 1.5f * s, ga, gb);
-                    emit_cone_open(&m, v3_add(base, v3_scale(up, 1.5f * s)), t1, up, t2, 0.75f * s, 1.3f * s, ga, gb);
-                    emit_cone_open(&m, v3_add(base, v3_scale(up, 2.3f * s)), t1, up, t2, 0.45f * s, 1.0f * s, ga, gb);
+                float tone = 0.9f + noise_hashf(k, 7, kind, seed) * 0.25f;
+                if (b->terrain == TERRAIN_FROST) {
+                    /* snowy spruce: blue-green with white-capped faces */
+                    emit_spruce(&m, base, t1, up, t2, s * 1.1f, shade(0x4A3A30FF, tone), shade(0x3E7C6AFF, tone), 0xE8F0F8FF, 1.0f);
+                } else if (b->terrain == TERRAIN_EMBER) {
+                    /* charred spruce: dark trunk, sparse rust foliage */
+                    emit_spruce(&m, base, t1, up, t2, s, shade(0x2A1E1AFF, tone), shade(0x5A2A1EFF, tone), shade(0x3E1C14FF, tone), 0.6f);
+                } else if (noise_hashf(k, 5, kind, seed) < 0.6f) {
+                    uint32_t ga = shade(0x2F7A38FF, tone), gb = shade(ga, 0.8f);
+                    emit_spruce(&m, base, t1, up, t2, s * 1.2f, bark, ga, gb, 1.0f);
                 } else {
-                    uint32_t ga = shade(0x4E9E3CFF, 0.9f + noise_hashf(k, 7, kind, seed) * 0.25f), gb = shade(ga, 0.78f);
-                    emit_taper(&m, base, t1, up, t2, 0.18f * s, 0.12f * s, 1.5f * s, bark);
-                    emit_blob(&m, v3_add(base, v3_scale(up, 2.3f * s)), t1, up, t2, 1.25f * s, 1.05f * s, 1.25f * s, 0.18f, ga, gb, pseed);
+                    uint32_t ga = shade(0x4E9E3CFF, tone), gb = shade(ga, 0.78f);
+                    emit_taper(&m, base, t1, up, t2, 0.42f * s, 0.26f * s, 4.2f * s, bark);
+                    emit_blob(&m, v3_add(base, v3_scale(up, 6.0f * s)), t1, up, t2, 3.0f * s, 2.5f * s, 3.0f * s, 0.18f, ga, gb, pseed);
                 }
             } else if (kind == 1) {
                 float rx = (0.5f + noise_hashf(k, 6, kind, seed) * 1.2f) * s * plan.rock_scale;
@@ -244,23 +287,23 @@ mesh mesh_props(const world *w, int bi) {
                 emit_blob(&m, v3_add(base, v3_scale(up, ry * 0.35f)), t1, up, t2, rx, ry, rz, 0.28f,
                           shade(plan.rock_a, tone), shade(plan.rock_b, tone), pseed);
             } else if (kind == 3) {
-                /* grass tuft: three thin blades fanned out, 9 vertices */
+                /* grass tuft: three blades fanned out, 9 vertices */
                 uint32_t gc = shade(0x4E9E3CFF, 0.75f + noise_hashf(k, 6, kind, seed) * 0.35f);
                 for (int c = 0; c < 3; c++) {
                     float a = c * 2.094f + noise_hashf(k, 7 + c, kind, seed);
                     v3 side = v3_add(v3_scale(t1, cosf(a)), v3_scale(t2, sinf(a)));
-                    float h = (0.5f + noise_hashf(k, 10 + c, kind, seed) * 0.5f) * s;
-                    v3 foot = v3_add(base, v3_scale(side, 0.15f * s));
-                    emit_tri(&m, v3_sub(foot, v3_scale(side, 0.12f * s)), v3_add(foot, v3_scale(side, 0.12f * s)),
-                             v3_add(v3_add(foot, v3_scale(up, h)), v3_scale(side, 0.25f * s)), v3_sub(base, up), gc);
+                    float h = (0.9f + noise_hashf(k, 10 + c, kind, seed) * 0.8f) * s;
+                    v3 foot = v3_add(base, v3_scale(side, 0.25f * s));
+                    emit_tri(&m, v3_sub(foot, v3_scale(side, 0.22f * s)), v3_add(foot, v3_scale(side, 0.22f * s)),
+                             v3_add(v3_add(foot, v3_scale(up, h)), v3_scale(side, 0.4f * s)), v3_sub(base, up), gc);
                 }
             } else {
                 /* a cluster of three tilted shards */
                 for (int c = 0; c < 3; c++) {
-                    float ry = (1.0f + noise_hashf(k, 6 + c, kind, seed) * 2.2f) * s;
-                    float rr = (0.22f + noise_hashf(k, 9 + c, kind, seed) * 0.3f) * s;
-                    v3 off = v3_add(v3_scale(t1, (noise_hashf(k, 12 + c, kind, seed) - 0.5f) * 1.6f * s),
-                                    v3_scale(t2, (noise_hashf(k, 15 + c, kind, seed) - 0.5f) * 1.6f * s));
+                    float ry = (1.5f + noise_hashf(k, 6 + c, kind, seed) * 3.0f) * s;
+                    float rr = (0.3f + noise_hashf(k, 9 + c, kind, seed) * 0.4f) * s;
+                    v3 off = v3_add(v3_scale(t1, (noise_hashf(k, 12 + c, kind, seed) - 0.5f) * 2.2f * s),
+                                    v3_scale(t2, (noise_hashf(k, 15 + c, kind, seed) - 0.5f) * 2.2f * s));
                     v3 tilt = v3_rotate(v3_rotate(up, t1, (noise_hashf(k, 18 + c, kind, seed) - 0.5f) * 0.6f),
                                         t2, (noise_hashf(k, 21 + c, kind, seed) - 0.5f) * 0.6f);
                     v3 tr = v3_norm(v3_cross(tilt, t2)), tf = v3_cross(tr, tilt);
@@ -268,7 +311,6 @@ mesh mesh_props(const world *w, int bi) {
                               (c & 1) ? 0xC8E0F4FF : 0xA8C8E8FF);
                 }
             }
-            placed++;
         }
     }
     return m;
