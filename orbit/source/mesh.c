@@ -11,6 +11,7 @@ static void set_col(vertex *v, uint32_t c) {
 static void put(vertex *v, v3 p, v3 n, uint32_t c) {
     v->pos[0] = p.x; v->pos[1] = p.y; v->pos[2] = p.z;
     v->nrm[0] = n.x; v->nrm[1] = n.y; v->nrm[2] = n.z;
+    v->uv[0] = v->uv[1] = 0;
     set_col(v, c);
 }
 
@@ -23,24 +24,28 @@ static v3 sphere_pt(int i, int rings, int j, int segs) {
 
 /* ---- indexed spheres ---- */
 
-/* Indexed sphere grid; radius_of(dir, ring, seg) gives each vertex its distance from the centre. */
-static mesh sphere_grid(int rings, int segs, float (*radius_of)(const void *, v3, int, int),
+/* Indexed sphere grid. With uv_rep > 0 the seam column is duplicated so texture
+   coordinates can tile uv_rep times around (2 * uv_rep along the equator). */
+static mesh sphere_grid(int rings, int segs, float uv_rep, float (*radius_of)(const void *, v3, int, int),
                         uint32_t (*color_of)(const void *, v3, int, int), const void *ctx, int smooth_normals) {
+    int cols = uv_rep > 0 ? segs + 1 : segs;
     mesh m;
-    m.count = (rings + 1) * segs;
+    m.count = (rings + 1) * cols;
     m.v = calloc(m.count, sizeof(vertex));
     m.idx = malloc(rings * segs * 6 * sizeof(uint16_t));
     for (int i = 0; i <= rings; i++) {
-        for (int j = 0; j < segs; j++) {
-            v3 dir = sphere_pt(i, rings, j, segs);
-            put(&m.v[i * segs + j], v3_scale(dir, radius_of(ctx, dir, i, j)), dir, color_of(ctx, dir, i, j));
+        for (int j = 0; j < cols; j++) {
+            v3 dir = sphere_pt(i, rings, j % segs, segs);
+            vertex *v = &m.v[i * cols + j];
+            put(v, v3_scale(dir, radius_of(ctx, dir, i, j % segs)), dir, color_of(ctx, dir, i, j % segs));
+            if (uv_rep > 0) { v->uv[0] = 2.0f * uv_rep * j / segs; v->uv[1] = uv_rep * i / rings; }
         }
     }
     uint16_t *o = m.idx;
     for (int i = 0; i < rings; i++) {
         for (int j = 0; j < segs; j++) {
-            int j1 = (j + 1) % segs;
-            uint16_t a = i * segs + j, bb = (i + 1) * segs + j, c = (i + 1) * segs + j1, d = i * segs + j1;
+            int j1 = uv_rep > 0 ? j + 1 : (j + 1) % segs;
+            uint16_t a = i * cols + j, bb = (i + 1) * cols + j, c = (i + 1) * cols + j1, d = i * cols + j1;
             /* a c b and a d c are counter-clockwise seen from outside; the pole rows
                collapse one triangle of each quad to a sliver, so skip those */
             if (i < rings - 1) { *o++ = a; *o++ = c; *o++ = bb; }
@@ -55,6 +60,13 @@ static mesh sphere_grid(int rings, int segs, float (*radius_of)(const void *, v3
             v3 pa = vpos(va), n = v3_cross(v3_sub(vpos(vb), pa), v3_sub(vpos(vc), pa));
             vertex *vs[3] = { va, vb, vc };
             for (int k = 0; k < 3; k++) { vs[k]->nrm[0] += n.x; vs[k]->nrm[1] += n.y; vs[k]->nrm[2] += n.z; }
+        }
+        if (uv_rep > 0) {
+            /* the seam copies share one normal so the lighting does not show a line */
+            for (int i = 0; i <= rings; i++) {
+                vertex *a = &m.v[i * cols], *b = &m.v[i * cols + segs];
+                for (int k = 0; k < 3; k++) { float s = a->nrm[k] + b->nrm[k]; a->nrm[k] = b->nrm[k] = s; }
+            }
         }
         for (int k = 0; k < m.count; k++) {
             v3 n = v3_(m.v[k].nrm[0], m.v[k].nrm[1], m.v[k].nrm[2]);
@@ -80,7 +92,8 @@ static uint32_t flat_color(const void *c, v3 dir, int ring, int seg) { (void)dir
 
 mesh mesh_planet(const world *w, int i) {
     sphere_ctx c = { w, i, 0, 0 };
-    return sphere_grid(w->b[i].rings, w->b[i].segs, planet_radius, planet_color, &c, 1);
+    float rep = w->b[i].emissive ? 0 : w->b[i].radius / 4.0f;   /* one repeat every ~12.5 units at the equator */
+    return sphere_grid(w->b[i].rings, w->b[i].segs, rep, planet_radius, planet_color, &c, 1);
 }
 
 mesh mesh_water(const world *w, int i, uint32_t col) {
@@ -88,7 +101,12 @@ mesh mesh_water(const world *w, int i, uint32_t col) {
     float r = world_sea_radius(w, i);
     if (r <= 0) return empty;
     sphere_ctx c = { w, i, col, r };
-    return sphere_grid(32, 48, flat_radius, flat_color, &c, 0);
+    return sphere_grid(32, 48, r / 5.0f, flat_radius, flat_color, &c, 0);
+}
+
+mesh mesh_sphere(float radius, int rings, int segs, uint32_t col) {
+    sphere_ctx c = { 0, 0, col, radius };
+    return sphere_grid(rings, segs, 0, flat_radius, flat_color, &c, 0);
 }
 
 /* ---- props: small flat-shaded shapes appended to a growing triangle list ---- */
@@ -196,14 +214,14 @@ static void emit_spruce(mesh *m, v3 base, v3 t1, v3 up, v3 t2, float s, uint32_t
     emit_cone_open(m, v3_add(base, v3_scale(up, 7.1f * s)), t1, up, t2, 0.9f * s * cs, 2.0f * s, ca, cb);
 }
 
-typedef struct { int trees, rocks, shards, grass; uint32_t rock_a, rock_b; float rock_scale; } prop_plan;
+typedef struct { int trees, rocks, shards; uint32_t rock_a, rock_b; float rock_scale; } prop_plan;
 
 static prop_plan plan_for(terrain_kind t) {
-    prop_plan p = { 0, 0, 0, 0, 0x787068FF, 0x625A50FF, 1.0f };
+    prop_plan p = { 0, 0, 0, 0x787068FF, 0x625A50FF, 1.0f };
     switch (t) {
-    case TERRAIN_VERDANT: p.trees = 220; p.rocks = 110; p.grass = 1400; p.rock_a = 0x8A8278FF; p.rock_b = 0x6E665CFF; break;
-    case TERRAIN_EMBER:   p.trees = 80; p.rocks = 170; p.rock_a = 0x6E3524FF; p.rock_b = 0x4E2418FF; p.rock_scale = 1.6f; break;
-    case TERRAIN_FROST:   p.trees = 110; p.rocks = 60; p.shards = 90; p.rock_a = 0xB4C2D2FF; p.rock_b = 0x94A6BAFF; break;
+    case TERRAIN_VERDANT: p.trees = 400; p.rocks = 110; p.rock_a = 0x8A8278FF; p.rock_b = 0x6E665CFF; break;
+    case TERRAIN_EMBER:   p.trees = 150; p.rocks = 170; p.rock_a = 0x6E3524FF; p.rock_b = 0x4E2418FF; p.rock_scale = 1.6f; break;
+    case TERRAIN_FROST:   p.trees = 200; p.rocks = 60; p.shards = 90; p.rock_a = 0xB4C2D2FF; p.rock_b = 0x94A6BAFF; break;
     default: break;
     }
     return p;
@@ -211,15 +229,32 @@ static prop_plan plan_for(terrain_kind t) {
 
 static int octant_of(v3 d) { return (d.x < 0 ? 1 : 0) | (d.y < 0 ? 2 : 0) | (d.z < 0 ? 4 : 0); }
 
+/* Random unit direction number k for a kind, or a grove-clustered one for trees. */
+static int pick_dir(const body *b, const v3 *grove, int k, int kind, uint32_t seed, v3 *out) {
+    if (kind == 0 && noise_hashf(k, 20, kind, seed) < 0.75f) {
+        v3 g = grove[noise_hash(k, 21, kind, seed) % 40];
+        v3 t1 = v3_any_perp(g), t2 = v3_cross(g, t1);
+        float spread = 32.0f / b->radius;   /* about 32 units */
+        *out = v3_norm(v3_add(g, v3_add(v3_scale(t1, (noise_hashf(k, 22, kind, seed) - 0.5f) * 2 * spread),
+                                        v3_scale(t2, (noise_hashf(k, 23, kind, seed) - 0.5f) * 2 * spread))));
+        return 1;
+    }
+    v3 d = v3_(noise_hashf(k, 0, kind, seed) * 2 - 1, noise_hashf(k, 1, kind, seed) * 2 - 1, noise_hashf(k, 2, kind, seed) * 2 - 1);
+    float l = v3_len(d);
+    if (l > 1 || l < 0.1f) return 0;
+    *out = v3_scale(d, 1.0f / l);
+    return 1;
+}
+
 mesh mesh_props(const world *w, int bi, int octant) {
     const body *b = &w->b[bi];
     prop_plan plan = plan_for(b->terrain);
     mesh m = { 0, 0, 0, 0 };
-    int cap = plan.trees * 180 + plan.rocks * 130 + plan.shards * 80 + plan.grass * 9;
+    int cap = plan.trees * 180 + plan.rocks * 130 + plan.shards * 80;
     if (cap == 0) return m;
     m.v = calloc(cap, sizeof(vertex));
 
-    int want[4] = { plan.trees, plan.rocks, plan.shards, plan.grass };
+    int want[3] = { plan.trees, plan.rocks, plan.shards };
     uint32_t seed = b->seed * 7919u + 3u;
     int k = 0;
     /* trees grow in groves: pick a few centres, then scatter most trees around them */
@@ -228,29 +263,16 @@ mesh mesh_props(const world *w, int bi, int octant) {
         v3 d = v3_(noise_hashf(g, 7, 9, seed) * 2 - 1, noise_hashf(g, 8, 9, seed) * 2 - 1, noise_hashf(g, 9, 9, seed) * 2 - 1);
         grove[g] = v3_len(d) > 0.05f ? v3_norm(d) : v3_(0, 1, 0);
     }
-    for (int kind = 0; kind < 4; kind++) {
+    for (int kind = 0; kind < 3; kind++) {
         int placed = 0, guard = 0;
         while (placed < want[kind] && guard++ < 60000) {
             k++;
             v3 dir;
-            if (kind == 0 && noise_hashf(k, 20, kind, seed) < 0.75f) {
-                /* near a grove centre: offset along two tangents */
-                v3 g = grove[noise_hash(k, 21, kind, seed) % 40];
-                v3 t1 = v3_any_perp(g), t2 = v3_cross(g, t1);
-                float spread = 30.0f / b->radius;   /* about 30 units */
-                dir = v3_norm(v3_add(g, v3_add(v3_scale(t1, (noise_hashf(k, 22, kind, seed) - 0.5f) * 2 * spread),
-                                               v3_scale(t2, (noise_hashf(k, 23, kind, seed) - 0.5f) * 2 * spread))));
-            } else {
-                dir = v3_(noise_hashf(k, 0, kind, seed) * 2 - 1, noise_hashf(k, 1, kind, seed) * 2 - 1, noise_hashf(k, 2, kind, seed) * 2 - 1);
-                float l = v3_len(dir);
-                if (l > 1 || l < 0.1f) continue;
-                dir = v3_scale(dir, 1.0f / l);
-            }
+            if (!pick_dir(b, grove, k, kind, seed, &dir)) continue;
             float raw = world_height_raw(w, bi, dir);
             float t = b->amp > 0 ? (raw - b->sea_level) / b->amp : 0;
             if (kind == 0 && (t < 0.08f || t > 0.8f)) continue;   /* trees: not beach, not snow */
-            if (kind == 3 && (t < 0.07f || t > 0.6f)) continue;   /* grass: on grass */
-            if (kind != 0 && kind != 3 && t < 0.02f) continue;     /* rocks and shards: dry land or ice */
+            if (kind != 0 && t < 0.02f) continue;                  /* rocks and shards: dry land or ice */
             placed++;                                              /* counts even if another octant draws it */
             if (octant_of(dir) != octant) continue;
 
@@ -259,7 +281,8 @@ mesh mesh_props(const world *w, int bi, int octant) {
             t1 = v3_rotate(t1, up, noise_hashf(k, 3, kind, seed) * 6.2832f);
             v3 t2 = v3_cross(up, t1);
             v3 base = v3_scale(dir, world_surface(w, bi, dir) - 0.3f);
-            float s = 0.7f + noise_hashf(k, 4, kind, seed) * 0.7f;   /* size 0.7..1.4 */
+            float s = kind == 0 ? 0.8f + noise_hashf(k, 4, kind, seed) * 0.8f     /* trees 0.8..1.6 */
+                                : 0.7f + noise_hashf(k, 4, kind, seed) * 0.7f;    /* rocks 0.7..1.4 */
             uint32_t pseed = seed ^ (uint32_t)(k * 2654435761u);
 
             if (kind == 0) {
@@ -286,17 +309,6 @@ mesh mesh_props(const world *w, int bi, int octant) {
                 float tone = 0.85f + noise_hashf(k, 9, kind, seed) * 0.3f;
                 emit_blob(&m, v3_add(base, v3_scale(up, ry * 0.35f)), t1, up, t2, rx, ry, rz, 0.28f,
                           shade(plan.rock_a, tone), shade(plan.rock_b, tone), pseed);
-            } else if (kind == 3) {
-                /* grass tuft: three blades fanned out, 9 vertices */
-                uint32_t gc = shade(0x4E9E3CFF, 0.75f + noise_hashf(k, 6, kind, seed) * 0.35f);
-                for (int c = 0; c < 3; c++) {
-                    float a = c * 2.094f + noise_hashf(k, 7 + c, kind, seed);
-                    v3 side = v3_add(v3_scale(t1, cosf(a)), v3_scale(t2, sinf(a)));
-                    float h = (0.9f + noise_hashf(k, 10 + c, kind, seed) * 0.8f) * s;
-                    v3 foot = v3_add(base, v3_scale(side, 0.25f * s));
-                    emit_tri(&m, v3_sub(foot, v3_scale(side, 0.22f * s)), v3_add(foot, v3_scale(side, 0.22f * s)),
-                             v3_add(v3_add(foot, v3_scale(up, h)), v3_scale(side, 0.4f * s)), v3_sub(base, up), gc);
-                }
             } else {
                 /* a cluster of three tilted shards */
                 for (int c = 0; c < 3; c++) {
@@ -311,6 +323,63 @@ mesh mesh_props(const world *w, int bi, int octant) {
                               (c & 1) ? 0xC8E0F4FF : 0xA8C8E8FF);
                 }
             }
+        }
+    }
+    return m;
+}
+
+/* ---- grass: 32 lat/long cells so only the nearby ones are drawn ---- */
+
+static int grass_cell_of(v3 d) {
+    float y = d.y; if (y > 1) y = 1; if (y < -1) y = -1;
+    float th = acosf(y), ph = atan2f(d.z, d.x);
+    if (ph < 0) ph += 2.0f * (float)M_PI;
+    int lb = (int)(th / (float)M_PI * 4); if (lb > 3) lb = 3;
+    int lo = (int)(ph / (2.0f * (float)M_PI) * 8); if (lo > 7) lo = 7;
+    return lb * 8 + lo;
+}
+
+v3 mesh_grass_cell_dir(int cell) {
+    float th = (float)M_PI * ((cell / 8) + 0.5f) / 4, ph = 2.0f * (float)M_PI * ((cell % 8) + 0.5f) / 8;
+    return v3_(sinf(th) * cosf(ph), cosf(th), sinf(th) * sinf(ph));
+}
+
+mesh mesh_grass(const world *w, int bi, int cell) {
+    const body *b = &w->b[bi];
+    mesh m = { 0, 0, 0, 0 };
+    int total = b->terrain == TERRAIN_VERDANT ? 6000 : 0;
+    if (!total) return m;
+    /* a cell holds at most a third of the tufts (the equator cells are the largest) */
+    m.v = calloc(total / 3 * 15 + 15, sizeof(vertex));
+    uint32_t seed = b->seed * 104729u + 5u;
+    int placed = 0, guard = 0, k = 0;
+    while (placed < total && guard++ < 200000) {
+        k++;
+        v3 dir = v3_(noise_hashf(k, 0, 8, seed) * 2 - 1, noise_hashf(k, 1, 8, seed) * 2 - 1, noise_hashf(k, 2, 8, seed) * 2 - 1);
+        float l = v3_len(dir);
+        if (l > 1 || l < 0.1f) continue;
+        dir = v3_scale(dir, 1.0f / l);
+        float raw = world_height_raw(w, bi, dir);
+        float t = (raw - b->sea_level) / b->amp;
+        if (t < 0.07f || t > 0.6f) continue;   /* grassland only */
+        placed++;
+        if (grass_cell_of(dir) != cell) continue;
+        if (m.count + 15 > total / 3 * 15) break;
+
+        v3 up = dir, t1 = v3_any_perp(up);
+        t1 = v3_rotate(t1, up, noise_hashf(k, 3, 8, seed) * 6.2832f);
+        v3 t2 = v3_cross(up, t1);
+        v3 base = v3_scale(dir, world_surface(w, bi, dir) - 0.05f);
+        float s = 0.8f + noise_hashf(k, 4, 8, seed) * 0.7f;
+        uint32_t gc = shade(0x56A840FF, 0.75f + noise_hashf(k, 6, 8, seed) * 0.35f);
+        for (int c = 0; c < 5; c++) {
+            float a = c * 1.2566f + noise_hashf(k, 7 + c, 8, seed) * 0.8f;
+            v3 side = v3_add(v3_scale(t1, cosf(a)), v3_scale(t2, sinf(a)));
+            v3 lean = v3_add(v3_scale(t1, cosf(a + 1.57f)), v3_scale(t2, sinf(a + 1.57f)));
+            float h = (0.9f + noise_hashf(k, 12 + c, 8, seed) * 0.9f) * s;
+            v3 foot = v3_add(base, v3_scale(side, 0.28f * s));
+            v3 tip = v3_add(v3_add(foot, v3_scale(up, h)), v3_scale(lean, 0.45f * s));
+            emit_tri(&m, v3_sub(foot, v3_scale(lean, 0.22f * s)), v3_add(foot, v3_scale(lean, 0.22f * s)), tip, v3_sub(base, up), gc);
         }
     }
     return m;

@@ -26,6 +26,8 @@ typedef struct {
     int liquid;          /* 1: water you sink into below sea_level; 0: ice you walk on (flattened) */
     int rings, segs;     /* terrain grid resolution, shared by the mesh and collision */
     uint32_t seed;
+    uint32_t atmo;       /* sky colour 0xRRGGBBAA at full daylight, alpha = strength; 0 for none */
+    float atmo_h;        /* atmosphere thickness above the surface */
     float *grid;         /* (rings + 1) * segs heights, filled by world_init */
     v3 pos, prev, vel;   /* world position now, last frame, and velocity */
 } body;

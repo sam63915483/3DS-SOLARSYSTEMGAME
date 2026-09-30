@@ -1,0 +1,69 @@
+; Atmosphere shell shader: rim glow. Alpha = colour alpha * (1 - |n.v|)^2 * daylight,
+; where n is the view-space normal, v the direction to the camera, daylight = max(0, n.sun).
+
+.fvec projection[4], modelView[4], sundir
+
+.constf myconst(0.0, 1.0, -1.0, 0.5)
+.constf inv255(0.00392156862745, 3.0, 0.15, 0.0)
+.alias  zeros myconst.xxxx
+.alias  ones  myconst.yyyy
+
+.out outpos position
+.out outclr color
+.out outtc0 texcoord0
+
+.alias inpos v0
+.alias innrm v1
+.alias incol v2
+.alias intex v3
+
+.proc main
+	mov r0.xyz, inpos
+	mov r0.w,   ones
+
+	; r1 = modelView * inpos
+	dp4 r1.x, modelView[0], r0
+	dp4 r1.y, modelView[1], r0
+	dp4 r1.z, modelView[2], r0
+	dp4 r1.w, modelView[3], r0
+
+	dp4 outpos.x, projection[0], r1
+	dp4 outpos.y, projection[1], r1
+	dp4 outpos.z, projection[2], r1
+	dp4 outpos.w, projection[3], r1
+
+	mov outtc0, intex
+
+	; n = normalised view-space normal
+	dp3 r14.x, modelView[0], innrm
+	dp3 r14.y, modelView[1], innrm
+	dp3 r14.z, modelView[2], innrm
+	dp3 r6.x, r14, r14
+	rsq r6.x, r6.x
+	mul r14.xyz, r14.xyz, r6.x
+
+	; v = normalised direction from the vertex to the camera
+	mov r5, -r1
+	dp3 r6.x, r5, r5
+	rsq r6.x, r6.x
+	mul r5.xyz, r5.xyz, r6.x
+
+	; f = (1 - |n.v|)^2
+	dp3 r7.x, r14, r5
+	max r7.x, r7.x, -r7.x
+	add r7.y, ones, -r7.x
+	mul r7.y, r7.y, r7.y
+
+	; daylight = clamp((n.sun + 0.15) * 3, 0, 1)
+	dp3 r8.x, sundir, r14
+	add r8.x, inv255.zzzz, r8.x
+	mul r8.x, inv255.yyyy, r8.x
+	max r8.x, zeros, r8.x
+	min r8.x, ones, r8.x
+
+	mul r9, inv255.xxxx, incol
+	mul r9.w, r9.w, r7.y
+	mul r9.w, r9.w, r8.x
+	mov outclr, r9
+	end
+.end

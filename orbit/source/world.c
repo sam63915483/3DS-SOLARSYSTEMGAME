@@ -20,11 +20,11 @@ v3 world_grid_dir(const world *w, int i, int ring, int seg) {
 
 void world_init(world *w) {
     static const body defs[BODY_COUNT] = {
-        /* name     radius  mu         orbit   phase omega emis terrain          amp   freq  sea    liq rings segs seed */
-        { "Sun",    100.0f, MU_SUN,    0,      0.0f, 0, 1, TERRAIN_SUN,     0.0f,  6.0f,  0.0f, 0, 32, 48, 11u, 0, {0,0,0}, {0,0,0}, {0,0,0} },
-        { "Ember",   80.0f, 96000.0f,  320.0f, 0.6f, 0, 0, TERRAIN_EMBER,   6.0f,  2.4f, -9.0f, 0, 40, 60, 23u, 0, {0,0,0}, {0,0,0}, {0,0,0} },
-        { "Verdant", 128.0f, 212992.0f, 620.0f, 2.4f, 0, 0, TERRAIN_VERDANT, 10.0f, 2.2f, -1.0f, 1, 64, 96, 37u, 0, {0,0,0}, {0,0,0}, {0,0,0} },
-        { "Frost",   96.0f, 129024.0f, 940.0f, 4.4f, 0, 0, TERRAIN_FROST,   5.0f,  2.4f, -1.0f, 0, 48, 72, 51u, 0, {0,0,0}, {0,0,0}, {0,0,0} },
+        /* name     radius  mu         orbit   phase omega emis terrain          amp   freq  sea    liq rings segs seed  atmo        atmo_h */
+        { "Sun",    100.0f, MU_SUN,    0,      0.0f, 0, 1, TERRAIN_SUN,     0.0f,  6.0f,  0.0f, 0, 32, 48, 11u, 0x00000000u, 0.0f, 0, {0,0,0}, {0,0,0}, {0,0,0} },
+        { "Ember",   80.0f, 96000.0f,  320.0f, 0.6f, 0, 0, TERRAIN_EMBER,   6.0f,  2.4f, -9.0f, 0, 40, 60, 23u, 0xC0602080u, 24.0f, 0, {0,0,0}, {0,0,0}, {0,0,0} },
+        { "Verdant", 128.0f, 212992.0f, 620.0f, 2.4f, 0, 0, TERRAIN_VERDANT, 10.0f, 2.2f, -1.0f, 1, 64, 96, 37u, 0x6AA0F0FFu, 45.0f, 0, {0,0,0}, {0,0,0}, {0,0,0} },
+        { "Frost",   96.0f, 129024.0f, 940.0f, 4.4f, 0, 0, TERRAIN_FROST,   5.0f,  2.4f, -1.0f, 0, 48, 72, 51u, 0xB8D0F0C0u, 30.0f, 0, {0,0,0}, {0,0,0}, {0,0,0} },
     };
     w->t = 0;
     for (int i = 0; i < BODY_COUNT; i++) {
@@ -132,6 +132,8 @@ float world_sea_radius(const world *w, int i) {
 
 static float clampf(float x, float lo, float hi) { return x < lo ? lo : (x > hi ? hi : x); }
 static uint32_t rgb(float r, float g, float b) {
+    /* the detail texture darkens by about 10 percent on average; pre-brighten to compensate */
+    r *= 1.1f; g *= 1.1f; b *= 1.1f;
     return ((uint32_t)clampf(r, 0, 255) << 24) | ((uint32_t)clampf(g, 0, 255) << 16) |
            ((uint32_t)clampf(b, 0, 255) << 8) | 0xFF;
 }

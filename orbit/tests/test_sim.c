@@ -231,6 +231,9 @@ int main(void) {
         }
         CHECK(total > 1000 && total % 3 == 0, "Verdant has batches of props");
         CHECK(wet == 0, "no props sit under the sea");
+        int gtotal = 0;
+        for (int g = 0; g < GRASS_CELLS; g++) { mesh gm = mesh_grass(&w, BODY_START, g); gtotal += gm.count; mesh_free(&gm); }
+        CHECK(gtotal > 20000 && gtotal % 15 == 0, "Verdant has thousands of five-blade grass tufts");
     }
 
     /* swimming: drop into deep water, float, jump out */

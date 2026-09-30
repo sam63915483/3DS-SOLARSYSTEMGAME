@@ -8,6 +8,7 @@ typedef struct {
     float pos[3];
     float nrm[3];
     uint8_t col[4];   /* r g b a */
+    float uv[2];
 } vertex;
 
 typedef struct {
@@ -17,13 +18,21 @@ typedef struct {
     int idx_count;
 } mesh;
 
-/* Body i's surface: an indexed sphere displaced by its height grid, coloured by biome. */
+/* Body i's surface: an indexed sphere displaced by its height grid, coloured by biome,
+   with tiling texture coordinates for a detail texture. */
 mesh mesh_planet(const world *w, int i);
 /* Translucent sea surface for body i at its sea radius (indexed sphere). Empty if no sea. */
 mesh mesh_water(const world *w, int i, uint32_t col);
-/* Trees, rocks, grass and shards on body i whose direction falls in the given octant
+/* Plain indexed sphere of the given radius, radial normals, one colour, no texcoords. */
+mesh mesh_sphere(float radius, int rings, int segs, uint32_t col);
+/* Trees, rocks and shards on body i whose direction falls in the given octant
    (0..7, bits: x negative, y negative, z negative), relative to the body's centre. */
 mesh mesh_props(const world *w, int i, int octant);
+/* Grass tufts on body i in one of GRASS_CELLS lat/long cells; drawn double sided. */
+#define GRASS_CELLS 32
+mesh mesh_grass(const world *w, int i, int cell);
+/* Unit direction of the centre of a grass cell. */
+v3 mesh_grass_cell_dir(int cell);
 /* Axis-aligned box centred on the origin. */
 mesh mesh_box(float sx, float sy, float sz, uint32_t col);
 /* Unit cone: base circle of radius 1 at y = 0, apex at y = 1. */

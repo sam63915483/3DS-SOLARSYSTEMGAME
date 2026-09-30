@@ -172,7 +172,13 @@ ice sheet you walk on. Biome vertex colours per planet.
 Props are built once per planet in `mesh.c`, split into eight octant batches so only the
 batches facing the camera draw: tall spruces and round trees in groves, grass tufts and
 boulders on Verdant; charred spruces and big boulders on Ember; snowy spruces, ice shard
-clusters and rocks on Frost. Flat shaded, skipped once a planet is over 700 units away. Planet meshes are
+clusters and rocks on Frost. Flat shaded, skipped once a planet is over 700 units away. Grass lives in 32 lat/long
+cells per planet drawn double sided only near the camera (`mesh_grass`). Terrain and water
+are textured with generated 64x64 tiling detail textures with mipmaps (`texture.c`): grass
+speckle, cracked rock, sparkling snow, drifting ripples. Each planet with an atmosphere has a
+sky colour (blue by day, warm at the terminator, black at night and above the atmosphere,
+stars hidden in daylight) and a rim-lit shell drawn with a second vertex shader
+(`atmosphere.v.pica`) so planets glow at the limb from space and haze at the horizon. Planet meshes are
 indexed. The astronaut is an articulated model (`mesh_astronaut`) with a walk cycle and a
 two-tank jetpack; flames are two-tone cones, and the air brake fires one along the direction
 of travel.
