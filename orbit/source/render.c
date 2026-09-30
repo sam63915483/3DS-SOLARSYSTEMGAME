@@ -6,6 +6,7 @@
 #include "texture.h"
 #include "vshader_shbin.h"
 #include "atmosphere_shbin.h"
+#include <stdio.h>
 
 #define DISPLAY_TRANSFER_FLAGS \
     (GX_TRANSFER_FLIP_VERT(0) | GX_TRANSFER_OUT_TILED(0) | GX_TRANSFER_RAW_COPY(0) | \
@@ -313,6 +314,12 @@ static float sky_color(const world *w, const player *p, const camera *c, u32 *ou
         /* the sun is huge in the sky: measure daylight from its upper limb, not its centre */
         float sun_ar = w->b[BODY_SUN].radius / v3_len(v3_sub(w->b[BODY_SUN].pos, c->pos));
         e += sun_ar;
+        /* these planets are small, so the visible horizon sits well below level: 12 degrees
+           from head height, more from a hill or from the air. Measure against that horizon. */
+        float ratio = b->radius / v3_len(rel);
+        if (ratio > 1) ratio = 1;
+        float dip = acosf(ratio);
+        e += sinf(dip);
         /* full blue until the sun is about 5 degrees up, dark about 6 degrees after it sets */
         float day = clamp01((e + 0.10f) / 0.18f);
         day = day * day * (3.0f - 2.0f * day);
