@@ -27,17 +27,18 @@ v3 world_grid_dir(const world *w, int i, int ring, int seg) {
 void world_init(world *w) {
     /* moons are half their planet's radius with surface gravity about 9 (planets are 13-15), on
        orbits wide enough that the planet's tidal pull leaves most of that gravity intact near the
-       surface; planets are spaced so no moon's path can reach the sun or a neighbour's moon */
+       surface; planets are packed as tightly as possible while no moon's path can reach the sun
+       or a neighbour's moon path (20 units apart when the planets line up) */
     static const body defs[BODY_COUNT] = {
         { .name = "Sun",     .radius = 100.0f, .mu = MU_SUN,    .parent = -1,           .emissive = 1, .terrain = TERRAIN_SUN,
           .rings = 32, .segs = 48, .seed = 11u },
-        { .name = "Ember",   .radius = 80.0f,  .mu = 96000.0f,  .parent = BODY_SUN,     .orbit_r = 520.0f,  .orbit_phase = 0.6f,
+        { .name = "Ember",   .radius = 80.0f,  .mu = 96000.0f,  .parent = BODY_SUN,     .orbit_r = 490.0f,  .orbit_phase = 0.6f,
           .terrain = TERRAIN_EMBER,   .amp = 6.0f,  .freq = 2.4f, .sea_level = -9.0f, .liquid = 0, .rings = 40, .segs = 60, .seed = 23u,
           .atmo = 0xE09058FFu, .atmo_h = 24.0f },
-        { .name = "Verdant", .radius = 128.0f, .mu = 212992.0f, .parent = BODY_SUN,     .orbit_r = 1450.0f, .orbit_phase = 2.4f,
+        { .name = "Verdant", .radius = 128.0f, .mu = 212992.0f, .parent = BODY_SUN,     .orbit_r = 1330.0f, .orbit_phase = 2.4f,
           .terrain = TERRAIN_VERDANT, .amp = 10.0f, .freq = 2.2f, .sea_level = -1.0f, .liquid = 1, .rings = 64, .segs = 96, .seed = 37u,
           .atmo = 0x6AA0F0FFu, .atmo_h = 45.0f },
-        { .name = "Frost",   .radius = 96.0f,  .mu = 129024.0f, .parent = BODY_SUN,     .orbit_r = 2450.0f, .orbit_phase = 4.4f,
+        { .name = "Frost",   .radius = 96.0f,  .mu = 129024.0f, .parent = BODY_SUN,     .orbit_r = 2220.0f, .orbit_phase = 4.4f,
           .terrain = TERRAIN_FROST,   .amp = 5.0f,  .freq = 2.4f, .sea_level = -1.0f, .liquid = 0, .rings = 48, .segs = 72, .seed = 51u,
           .atmo = 0xB8D0F0FFu, .atmo_h = 30.0f },
         { .name = "Cinder",  .radius = 40.0f,  .mu = 14400.0f,  .parent = BODY_EMBER,   .orbit_r = 285.0f,  .orbit_phase = 1.1f, .tilt = 0.35f,

@@ -59,6 +59,13 @@ int main(void) {
             CHECK(hi <= b->amp, "moon heights stay under the collision bound");
             CHECK(hi > 0.1f * b->amp, "moon has raised rims");
         }
+        /* neighbouring moon paths never overlap, even when the planets line up */
+        for (int m = 0; m + 1 < 3; m++) {
+            const body *a = &w.b[moons[m]], *b2 = &w.b[moons[m + 1]];
+            float ra = w.b[a->parent].orbit_r + a->orbit_r + a->radius + a->amp;
+            float rb = w.b[b2->parent].orbit_r - b2->orbit_r - b2->radius - b2->amp;
+            CHECK(rb - ra >= 15.0f, "neighbouring moon paths stay apart when the planets line up");
+        }
         /* a planet's frame accelerates with the sun's pull; a moon's adds its planet's */
         v3 fa = world_frame_accel(&w, BODY_VERDANT);
         CHECK(v3_len(v3_sub(fa, world_gravity_from(&w, BODY_SUN, w.b[BODY_VERDANT].pos))) < 1e-4f, "planet frame acceleration is the sun's pull");
