@@ -239,11 +239,11 @@ float world_height_raw(const world *w, int i, v3 dir) {
     if (b->terrain == TERRAIN_MOON) return (n - 0.5f) * 0.6f * b->amp + moon_craters(dir, b->seed, b->amp);
     float h = (n - 0.5f) * 2.0f * b->amp;
     if (b->liquid && h < b->sea_level) {
-        /* deepen the seas: the shoreline slope is untouched, but past 3 units down the bed
-           drops away 2.5x faster, so the water is deep enough to fish in */
-        float d = h - b->sea_level, k = -d / 3.0f;
-        if (k > 1) k = 1;
-        h = b->sea_level + d * (1.0f + 1.5f * k);
+        /* deepen the seas: a steep drop right off the shoreline (4x the land slope), easing to
+           2.5x by 6 units down, so you are swimming a step from the beach and the bobber has
+           real water under it. Continuous and monotonic: h = sea + 4d + d^2/4 down to d = -6. */
+        float d = h - b->sea_level;
+        h = d > -6.0f ? b->sea_level + 4.0f * d + 0.25f * d * d : b->sea_level + 2.5f * d;
     }
     return h;
 }
