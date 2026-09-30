@@ -1,10 +1,13 @@
-; Atmosphere shell shader: rim glow. Alpha = colour alpha * (1 - |n.v|)^2 * daylight,
-; where n is the view-space normal, v the direction to the camera, daylight = max(0, n.sun).
+; Atmosphere shell shader. The same shell is drawn from both sides:
+;   seen from outside (n.v > 0): a soft band, alpha = 0.72 * 4 d (1 - d), d = n.v
+;   seen from inside  (n.v < 0): the sky itself, alpha = 0.95
+; both scaled by daylight = clamp((n.sun + 0.15) * 3), the vertex alpha and params.x.
 
 .fvec projection[4], modelView[4], sundir, params   ; params.x = alpha scale
 
 .constf myconst(0.0, 1.0, -1.0, 0.5)
 .constf inv255(0.00392156862745, 3.0, 0.15, 4.0)
+.constf c2(1000.0, 0.95, 0.72, 0.0)
 .alias  zeros myconst.xxxx
 .alias  ones  myconst.yyyy
 
@@ -48,13 +51,26 @@
 	rsq r6.x, r6.x
 	mul r5.xyz, r5.xyz, r6.x
 
-	; f = 4 d (1 - d) with d = |n.v|: zero at the centre and at the silhouette, so the
-	; layered shells overlap into one soft glow with no hard edges
+	; d = n.v (signed), |d|
 	dp3 r7.x, r14, r5
-	max r7.x, r7.x, -r7.x
-	add r7.y, ones, -r7.x
-	mul r7.y, r7.y, r7.x
+	max r7.z, r7.x, -r7.x
+
+	; outside band = 0.72 * 4 |d| (1 - |d|)
+	add r7.y, ones, -r7.z
+	mul r7.y, r7.y, r7.z
 	mul r7.y, inv255.wwww, r7.y
+	mul r7.y, c2.zzzz, r7.y
+
+	; inside weight = clamp(-d * 1000, 0, 1): 1 when we look at the shell from within
+	mul r10.x, c2.xxxx, -r7.x
+	max r10.x, zeros, r10.x
+	min r10.x, ones, r10.x
+
+	; alpha shape = inside * 0.95 + (1 - inside) * band
+	mul r10.y, c2.yyyy, r10.x
+	add r10.z, ones, -r10.x
+	mul r10.z, r10.z, r7.y
+	add r7.y, r10.y, r10.z
 
 	; daylight = clamp((n.sun + 0.15) * 3, 0, 1)
 	dp3 r8.x, sundir, r14
