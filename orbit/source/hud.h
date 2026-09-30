@@ -10,6 +10,8 @@ void hud_init(void);
 void hud_draw(C3D_RenderTarget *bottom, const world *w, const player *p, const camera *c, float fps);
 /* True when a touch at x,y (bottom-screen pixels) lands on the VIEW button. */
 int hud_view_button_hit(int x, int y);
+/* True when a touch lands on the GYRO button, which only exists in first person. */
+int hud_gyro_button_hit(int x, int y, const camera *c);
 void hud_fini(void);
 
 #endif

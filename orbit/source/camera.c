@@ -43,7 +43,14 @@ static void place(camera *c, const world *w, const player *p, float dt) {
     c->target = v3_lerp(tp_target, fp_target, s);
 }
 
-void camera_toggle_view(camera *c) { c->first_person = !c->first_person; }
+void camera_toggle_view(camera *c) {
+    c->first_person = !c->first_person;
+    if (!c->first_person) c->gyro = 0;
+}
+
+void camera_toggle_gyro(camera *c) {
+    if (c->first_person) c->gyro = !c->gyro;
+}
 
 void camera_init(camera *c, const player *p) {
     c->up = p->up;
@@ -53,6 +60,7 @@ void camera_init(camera *c, const player *p) {
     c->ground_pitch = 0;
     c->first_person = 0;
     c->fp = 0;
+    c->gyro = 0;
     c->was_grounded = player_on_foot(p);
     c->pos = v3_add(v3_add(p->pos, v3_scale(c->up, CAM_UP)), v3_scale(c->fwd, -CAM_BACK));
     c->target = p->pos;
@@ -68,9 +76,9 @@ void camera_update(camera *c, const world *w, const player *p, const camera_inpu
             if (v3_len(h) > 1e-3f) c->fwd = v3_norm(h);
             c->ground_pitch = 0;
         }
-        /* circle pad left/right orbits the look around the standing player */
-        if (in->look_x != 0) {
-            float a = -in->look_x * LOOK_YAW * dt;
+        /* circle pad left/right (and the gyro) orbit the look around the standing player */
+        float a = (-in->look_x * LOOK_YAW + in->gyro_yaw) * dt;
+        if (a != 0) {
             c->fwd = v3_rotate(c->fwd, c->up, a);
             c->view = v3_rotate(c->view, c->up, a);
             c->view_up = v3_rotate(c->view_up, c->up, a);
@@ -78,8 +86,8 @@ void camera_update(camera *c, const world *w, const player *p, const camera_inpu
         c->fwd = v3_tangent(c->fwd, c->up);
         c->fwd = v3_len(c->fwd) < 1e-3f ? v3_any_perp(c->up) : v3_norm(c->fwd);
 
-        /* circle pad up/down pitches the look, within limits; walking keeps it */
-        c->ground_pitch += in->look_y * GROUND_PITCH_RATE * dt;
+        /* circle pad up/down (and the gyro) pitch the look, within limits; walking keeps it */
+        c->ground_pitch += (in->look_y * GROUND_PITCH_RATE + in->gyro_pitch) * dt;
         if (c->ground_pitch > GROUND_PITCH_MAX) c->ground_pitch = GROUND_PITCH_MAX;
         if (c->ground_pitch < -GROUND_PITCH_MAX) c->ground_pitch = -GROUND_PITCH_MAX;
         float cp = cosf(c->ground_pitch), sp = sinf(c->ground_pitch);
@@ -94,12 +102,12 @@ void camera_update(camera *c, const world *w, const player *p, const camera_inpu
     } else {
         /* free flight: pitch around right, yaw around view up, roll around view */
         v3 right = v3_norm(v3_cross(c->view, c->view_up));
-        float pitch = in->look_y * LOOK_PITCH * dt;
+        float pitch = (in->look_y * LOOK_PITCH + in->gyro_pitch) * dt;
         if (pitch != 0) {
             c->view = v3_rotate(c->view, right, pitch);
             c->view_up = v3_rotate(c->view_up, right, pitch);
         }
-        float yaw = -in->look_x * LOOK_YAW * dt;
+        float yaw = (-in->look_x * LOOK_YAW + in->gyro_yaw) * dt;
         if (yaw != 0) c->view = v3_rotate(c->view, c->view_up, yaw);
         float roll = in->turn * ROLL_RATE * dt;
         if (roll != 0) c->view_up = v3_rotate(c->view_up, c->view, roll);

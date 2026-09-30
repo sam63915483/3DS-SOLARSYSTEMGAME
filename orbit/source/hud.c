@@ -6,12 +6,24 @@
 #define BTN_Y 4
 #define BTN_W 80
 #define BTN_H 22
+#define GYRO_W 64
+#define GYRO_X (BTN_X - 6 - GYRO_W)
 
 void hud_init(void) { font_init(); }
 void hud_fini(void) { font_fini(); }
 
 int hud_view_button_hit(int x, int y) {
     return x >= BTN_X && x < BTN_X + BTN_W && y >= BTN_Y && y < BTN_Y + BTN_H;
+}
+
+int hud_gyro_button_hit(int x, int y, const camera *c) {
+    return c->first_person && x >= GYRO_X && x < GYRO_X + GYRO_W && y >= BTN_Y && y < BTN_Y + BTN_H;
+}
+
+static void button(int x, int w, const char *label, int lit, u32 text) {
+    C2D_DrawRectSolid(x, BTN_Y, 0, w, BTN_H, lit ? C2D_Color32(0xFF, 0xC0, 0x40, 0xFF) : C2D_Color32(0x40, 0x48, 0x60, 0xFF));
+    C2D_DrawRectSolid(x + 1, BTN_Y + 1, 0, w - 2, BTN_H - 2, lit ? C2D_Color32(0x5A, 0x48, 0x20, 0xFF) : C2D_Color32(0x2A, 0x30, 0x44, 0xFF));
+    font_draw(label, x + (w - font_width(label, 1)) / 2, BTN_Y + 7, 1, text);
 }
 
 void hud_draw(C3D_RenderTarget *bottom, const world *w, const player *p, const camera *c, float fps) {
@@ -29,10 +41,9 @@ void hud_draw(C3D_RenderTarget *bottom, const world *w, const player *p, const c
     font_draw("ORBIT", 8, 7, 2, accent);
     snprintf(buf, sizeof buf, "%.0f FPS", fps);
     font_draw(buf, 100, 11, 1, dim);
-    C2D_DrawRectSolid(BTN_X, BTN_Y, 0, BTN_W, BTN_H, C2D_Color32(0x40, 0x48, 0x60, 0xFF));
-    C2D_DrawRectSolid(BTN_X + 1, BTN_Y + 1, 0, BTN_W - 2, BTN_H - 2, C2D_Color32(0x2A, 0x30, 0x44, 0xFF));
-    const char *label = c->first_person ? "VIEW: 1ST" : "VIEW: 3RD";
-    font_draw(label, BTN_X + (BTN_W - font_width(label, 1)) / 2, BTN_Y + 7, 1, white);
+    button(BTN_X, BTN_W, c->first_person ? "VIEW: 1ST" : "VIEW: 3RD", 0, white);
+    /* the gyro button pops up beside it in first person */
+    if (c->first_person) button(GYRO_X, GYRO_W, c->gyro ? "GYRO ON" : "GYRO", c->gyro, white);
 
     /* status */
     snprintf(buf, sizeof buf, "%s  %s", b->name, p->swimming ? "SWIMMING" : (p->grounded ? (p->in_water ? "WADING" : "GROUNDED") : (p->thrusting ? "THRUST" : "FLYING")));
@@ -55,7 +66,9 @@ void hud_draw(C3D_RenderTarget *bottom, const world *w, const player *p, const c
     if (player_on_foot(p)) {
         font_draw("PAD  LOOK       A  WALK", 8, 160, 1.5f, dim);
         font_draw("X  JUMP", 8, 176, 1.5f, dim);
-        font_draw("(VIEW BUTTON: FIRST PERSON)", 8, 192, 1.5f, dim);
+        if (c->gyro) font_draw("MOVE THE 3DS TO LOOK AROUND", 8, 192, 1.5f, dim);
+        else if (c->first_person) font_draw("(GYRO BUTTON: MOTION LOOK)", 8, 192, 1.5f, dim);
+        else font_draw("(VIEW BUTTON: FIRST PERSON)", 8, 192, 1.5f, dim);
     } else {
         font_draw("PAD  LOOK       L/R ROLL", 8, 160, 1.5f, dim);
         font_draw("X  UP     B  DOWN", 8, 176, 1.5f, dim);

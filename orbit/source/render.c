@@ -105,6 +105,8 @@ void render_init(const world *w) {
         if (b->atmo) {
             /* one rim-glow shell */
             shell_in[i] = upload(mesh_sphere(b->radius + b->atmo_h * 0.7f, 24, 36, (b->atmo & 0xFFFFFF00u) | 0xE0));
+            if (b->terrain != TERRAIN_EMBER)
+                clouds[i] = upload(mesh_sphere_uv(b->radius + b->atmo_h * 0.45f, 28, 42, 0xFFFFFFD8u, 2.0f));
         }
     }
     has_water_tex = texture_make_detail(&water_tex, DETAIL_WATER, 77u);

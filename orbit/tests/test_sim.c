@@ -116,6 +116,29 @@ int main(void) {
     in.my = 0;
     for (int f = 0; f < 30; f++) { world_update(&w, DT); player_update(&p, &w, &in, DT); camera_update(&c, &w, &p, &cin, DT); }
 
+    /* gyro look on the ground: yaw rate turns the heading left (counter-clockwise about up),
+       pitch rate tilts the look and is clamped like the pad, and the horizon stays level */
+    {
+        camera_toggle_view(&c); camera_toggle_gyro(&c);
+        CHECK(c.first_person && c.gyro, "gyro look can be switched on in first person");
+        v3 fwd0 = c.fwd;
+        cin.gyro_yaw = 1.0f;   /* rad/s, positive = turning left */
+        for (int f = 0; f < 30; f++) { world_update(&w, DT); player_update(&p, &w, &in, DT); camera_update(&c, &w, &p, &cin, DT); }
+        CHECK(v3_dot(v3_cross(fwd0, c.fwd), c.up) > 0.3f, "gyro yaw turns the ground heading left");
+        CHECK(fabsf(v3_dot(c.fwd, c.up)) < 1e-3f, "gyro yaw keeps the heading tangent to the ground");
+        cin.gyro_yaw = 0; cin.gyro_pitch = -3.0f;
+        for (int f = 0; f < 90; f++) { world_update(&w, DT); player_update(&p, &w, &in, DT); camera_update(&c, &w, &p, &cin, DT); }
+        CHECK(v3_dot(c.view, c.up) < -0.5f, "gyro pitch down tilts the ground look down");
+        CHECK(v3_dot(c.view, c.up) > -0.95f, "gyro pitch is clamped on the ground");
+        CHECK(fabsf(v3_dot(v3_cross(c.view, c.view_up), c.up)) < 0.05f, "gyro look keeps the horizon level on the ground");
+        cin.gyro_pitch = 3.0f;
+        for (int f = 0; f < 60; f++) { world_update(&w, DT); player_update(&p, &w, &in, DT); camera_update(&c, &w, &p, &cin, DT); }
+        cin.gyro_pitch = 0;
+        camera_toggle_view(&c);
+        CHECK(!c.first_person && !c.gyro, "leaving first person switches gyro look off");
+        for (int f = 0; f < 60; f++) { world_update(&w, DT); player_update(&p, &w, &in, DT); camera_update(&c, &w, &p, &cin, DT); }
+    }
+
     /* flight: the pad pitches the view without limit, A boosts along it */
     in.jump_pressed = 1; in.thrust_up = 1; in.view_up = p.up;   /* constant thrust direction for the loop tests */
     world_update(&w, DT); player_update(&p, &w, &in, DT);
@@ -140,6 +163,20 @@ int main(void) {
     CHECK(v3_dot(c.view, view_before_roll) > 0.999f, "rolling keeps the view direction");
     CHECK(v3_dot(c.view_up, up_before_roll) < 0.7f, "rolling turns the camera up vector");
     cin.turn = 0;
+    /* gyro in flight: pitch rate rotates the view toward its own up, yaw rate about that up */
+    {
+        v3 v0 = c.view, u0 = c.view_up;
+        cin.gyro_pitch = 1.0f;
+        for (int f = 0; f < 30; f++) { world_update(&w, DT); player_update(&p, &w, &in, DT); camera_update(&c, &w, &p, &cin, DT); }
+        CHECK(v3_dot(c.view, u0) > 0.3f, "gyro pitch up in flight tilts the view toward the camera up");
+        cin.gyro_pitch = 0; cin.gyro_yaw = 1.0f;
+        v3 v1 = c.view;
+        for (int f = 0; f < 30; f++) { world_update(&w, DT); player_update(&p, &w, &in, DT); camera_update(&c, &w, &p, &cin, DT); }
+        CHECK(v3_dot(v3_cross(v1, c.view), c.view_up) > 0.3f, "gyro yaw in flight turns the view left about the camera up");
+        CHECK(fabsf(v3_dot(c.view, c.view_up)) < 1e-3f, "gyro look keeps the flight basis orthonormal");
+        cin.gyro_yaw = 0;
+        (void)v0;
+    }
     in.thrust_up = 0; in.thrust_fwd = 1; in.view_forward = c.view;
     v3 before = p.vel;
     for (int f = 0; f < 30; f++) { world_update(&w, DT); player_update(&p, &w, &in, DT); camera_update(&c, &w, &p, &cin, DT); in.view_forward = c.view; }
