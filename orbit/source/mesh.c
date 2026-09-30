@@ -93,7 +93,20 @@ static uint32_t flat_color(const void *c, v3 dir, int ring, int seg) { (void)dir
 mesh mesh_planet(const world *w, int i) {
     sphere_ctx c = { w, i, 0, 0 };
     float rep = w->b[i].emissive ? 0 : w->b[i].radius / 4.0f;   /* one repeat every ~12.5 units at the equator */
-    return sphere_grid(w->b[i].rings, w->b[i].segs, rep, planet_radius, planet_color, &c, 1);
+    mesh m = sphere_grid(w->b[i].rings, w->b[i].segs, rep, planet_radius, planet_color, &c, 1);
+    if (w->b[i].cave.enabled) {
+        /* open the tunnel mouth: drop every triangle with a corner inside the tunnel; the
+           cave's skirt lies over the ragged edge that leaves */
+        int out = 0;
+        for (int t = 0; t + 2 < m.idx_count; t += 3) {
+            int cut = 0;
+            for (int k = 0; k < 3; k++) if (world_in_hole(w, i, v3_norm(vpos(&m.v[m.idx[t + k]])))) cut = 1;
+            if (cut) continue;
+            m.idx[out++] = m.idx[t]; m.idx[out++] = m.idx[t + 1]; m.idx[out++] = m.idx[t + 2];
+        }
+        m.idx_count = out;
+    }
+    return m;
 }
 
 mesh mesh_water(const world *w, int i, uint32_t col) {
@@ -471,6 +484,21 @@ mesh mesh_gem(float r, uint32_t col) {
     emit_octa(&m, v3_(0, 0, 0), AX, AY, AZ, r, r, r, col);
     return m;
 }
+
+void mesh_put(mesh *m, v3 p, v3 n, uint32_t col) { put(&m->v[m->count++], p, n, col); }
+void mesh_tri(mesh *m, v3 a, v3 b, v3 c, v3 inside, uint32_t col) { emit_tri(m, a, b, c, inside, col); }
+void mesh_tri_n(mesh *m, v3 a, v3 na, v3 b, v3 nb, v3 c, v3 nc, uint32_t ca, uint32_t cb, uint32_t cc) {
+    v3 face = v3_cross(v3_sub(b, a), v3_sub(c, a));
+    if (v3_dot(face, v3_add(v3_add(na, nb), nc)) < 0) {   /* wind to agree with the normals */
+        v3 t = b; b = c; c = t;
+        v3 tn = nb; nb = nc; nc = tn;
+        uint32_t tc = cb; cb = cc; cc = tc;
+    }
+    put(&m->v[m->count++], a, na, ca);
+    put(&m->v[m->count++], b, nb, cb);
+    put(&m->v[m->count++], c, nc, cc);
+}
+void mesh_octa(mesh *m, v3 c, v3 r, v3 u, v3 f, float rx, float ry, float rz, uint32_t col) { emit_octa(m, c, r, u, f, rx, ry, rz, col); }
 
 static uint32_t rnd(uint32_t *s) { *s = *s * 1664525u + 1013904223u; return *s; }
 static float frand(uint32_t *s) { return (rnd(s) >> 8) / 16777216.0f; }

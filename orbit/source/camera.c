@@ -1,4 +1,5 @@
 #include "camera.h"
+#include "cave.h"
 
 #define CAM_BACK     7.0f
 #define CAM_UP       2.2f
@@ -24,11 +25,22 @@ static void place(camera *c, const world *w, const player *p, float dt) {
     v3 tp_pos = v3_add(v3_add(p->pos, v3_scale(c->view_up, CAM_UP)), v3_scale(c->view, -CAM_BACK));
     v3 tp_target = v3_add(p->pos, v3_scale(c->view_up, 1.0f));
     const body *b = &w->b[p->dom];
-    v3 d = v3_sub(tp_pos, b->pos);
-    float dist = v3_len(d);
-    if (dist < b->radius + b->amp + 1.0f) {   /* close enough to care: keep it above the terrain */
-        float min = world_surface(w, p->dom, v3_norm(d)) + 0.6f;
-        if (dist < min) tp_pos = v3_add(b->pos, v3_scale(d, min / dist));
+    if (p->in_cave) {
+        /* walk the camera back from the player and stop before it would leave the cave */
+        v3 best = tp_target;
+        for (int k = 1; k <= 16; k++) {
+            v3 q = v3_lerp(tp_target, tp_pos, k / 16.0f), n; float pen;
+            if (!cave_inside(&b->cave, v3_sub(q, b->pos), 0.4f, &n, &pen) || pen > 0) break;
+            best = q;
+        }
+        tp_pos = best;
+    } else {
+        v3 d = v3_sub(tp_pos, b->pos);
+        float dist = v3_len(d);
+        if (dist < b->radius + b->amp + 1.0f && !world_in_hole(w, p->dom, v3_norm(d))) {   /* keep it above the terrain */
+            float min = world_surface(w, p->dom, v3_norm(d)) + 0.6f;
+            if (dist < min) tp_pos = v3_add(b->pos, v3_scale(d, min / dist));
+        }
     }
 
     /* first person: at the eyes, looking along the view */

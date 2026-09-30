@@ -48,6 +48,19 @@ mesh mesh_astronaut(astro_part part);
 mesh mesh_fish(void);
 /* Octahedron of the given radius at the origin (fireflies, gems). */
 mesh mesh_gem(float r, uint32_t col);
+/* Building blocks for meshes made elsewhere (cavemesh.c). The mesh must have room. */
+void mesh_put(mesh *m, v3 p, v3 n, uint32_t col);
+/* One triangle wound so its normal points away from `inside`, flat shaded. */
+void mesh_tri(mesh *m, v3 a, v3 b, v3 c, v3 inside, uint32_t col);
+/* One triangle with the given per-vertex normals, wound so the face agrees with them. */
+void mesh_tri_n(mesh *m, v3 a, v3 na, v3 b, v3 nb, v3 c, v3 nc, uint32_t ca, uint32_t cb, uint32_t cc);
+/* Octahedron with radii along a basis, appended. */
+void mesh_octa(mesh *m, v3 c, v3 r, v3 u, v3 f, float rx, float ry, float rz, uint32_t col);
+/* Body i's cave, in body space, walls facing inward (cavemesh.c). Empty when it has none. */
+mesh mesh_cave_tunnel(const world *w, int i);
+mesh mesh_cave_cavern(const world *w, int i);
+mesh mesh_cave_crystals(const world *w, int i);
+mesh mesh_cave_shell(const world *w, int i);   /* dark lining under the terrain */
 /* n small triangles scattered on a sphere of the given radius. */
 mesh mesh_stars(int n, float radius, float size, uint32_t seed);
 void mesh_free(mesh *m);
