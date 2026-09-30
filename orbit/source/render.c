@@ -333,7 +333,10 @@ void render_scene(const world *w, const player *p, const camera *c, float time) 
         mat_stars.emission[0] = mat_stars.emission[1] = mat_stars.emission[2] = star_k > 1 ? 1 : star_k;
         mtx_translate(&model, c->pos);
         C3D_CullFace(GPU_CULL_NONE);
+        /* additive: a dimmed star can only brighten the sky behind it, never show as a dark speck */
+        C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ONE, GPU_ONE, GPU_ONE);
         draw(&stars, &model, &mat_stars);
+        C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
         C3D_CullFace(GPU_CULL_BACK_CCW);
     }
 
