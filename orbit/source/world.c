@@ -4,12 +4,18 @@
 
 #define MU_SUN 200000.0f
 
-static void body_place(body *b, float t) {
-    if (b->orbit_r <= 0) { b->pos = v3_(0, 0, 0); b->vel = v3_(0, 0, 0); return; }
+static void body_place(world *w, int i, float t) {
+    body *b = &w->b[i];
+    if (b->orbit_r <= 0 || b->parent < 0) { b->pos = v3_(0, 0, 0); b->vel = v3_(0, 0, 0); return; }
     float a = b->orbit_phase + b->omega * t;
     float c = cosf(a), s = sinf(a);
-    b->pos = v3_(b->orbit_r * c, 0, b->orbit_r * s);
-    b->vel = v3_(-b->orbit_r * b->omega * s, 0, b->orbit_r * b->omega * c);
+    float ct = cosf(b->tilt), st = sinf(b->tilt);
+    /* circle in the xz plane, then tilted about x; parents are placed first (lower index) */
+    v3 local = v3_(b->orbit_r * c, -b->orbit_r * s * st, b->orbit_r * s * ct);
+    v3 lvel = v3_(-b->orbit_r * b->omega * s, -b->orbit_r * b->omega * c * st, b->orbit_r * b->omega * c * ct);
+    const body *par = &w->b[b->parent];
+    b->pos = v3_add(par->pos, local);
+    b->vel = v3_add(par->vel, lvel);
 }
 
 v3 world_grid_dir(const world *w, int i, int ring, int seg) {
@@ -19,20 +25,36 @@ v3 world_grid_dir(const world *w, int i, int ring, int seg) {
 }
 
 void world_init(world *w) {
+    /* moons are a quarter of their planet's size, with orbits wide enough that their own pull
+       wins for a good 20 units above the surface; planets are spaced so no moon's path can
+       ever reach a neighbour */
     static const body defs[BODY_COUNT] = {
-        /* name     radius  mu         orbit   phase omega emis terrain          amp   freq  sea    liq rings segs seed  atmo        atmo_h */
-        { "Sun",    100.0f, MU_SUN,    0,      0.0f, 0, 1, TERRAIN_SUN,     0.0f,  6.0f,  0.0f, 0, 32, 48, 11u, 0x00000000u, 0.0f, 0, {0,0,0}, {0,0,0}, {0,0,0} },
-        { "Ember",   80.0f, 96000.0f,  320.0f, 0.6f, 0, 0, TERRAIN_EMBER,   6.0f,  2.4f, -9.0f, 0, 40, 60, 23u, 0xE09058FFu, 24.0f, 0, {0,0,0}, {0,0,0}, {0,0,0} },
-        { "Verdant", 128.0f, 212992.0f, 620.0f, 2.4f, 0, 0, TERRAIN_VERDANT, 10.0f, 2.2f, -1.0f, 1, 64, 96, 37u, 0x6AA0F0FFu, 45.0f, 0, {0,0,0}, {0,0,0}, {0,0,0} },
-        { "Frost",   96.0f, 129024.0f, 940.0f, 4.4f, 0, 0, TERRAIN_FROST,   5.0f,  2.4f, -1.0f, 0, 48, 72, 51u, 0xB8D0F0FFu, 30.0f, 0, {0,0,0}, {0,0,0}, {0,0,0} },
+        { .name = "Sun",     .radius = 100.0f, .mu = MU_SUN,    .parent = -1,           .emissive = 1, .terrain = TERRAIN_SUN,
+          .rings = 32, .segs = 48, .seed = 11u },
+        { .name = "Ember",   .radius = 80.0f,  .mu = 96000.0f,  .parent = BODY_SUN,     .orbit_r = 400.0f,  .orbit_phase = 0.6f,
+          .terrain = TERRAIN_EMBER,   .amp = 6.0f,  .freq = 2.4f, .sea_level = -9.0f, .liquid = 0, .rings = 40, .segs = 60, .seed = 23u,
+          .atmo = 0xE09058FFu, .atmo_h = 24.0f },
+        { .name = "Verdant", .radius = 128.0f, .mu = 212992.0f, .parent = BODY_SUN,     .orbit_r = 1100.0f, .orbit_phase = 2.4f,
+          .terrain = TERRAIN_VERDANT, .amp = 10.0f, .freq = 2.2f, .sea_level = -1.0f, .liquid = 1, .rings = 64, .segs = 96, .seed = 37u,
+          .atmo = 0x6AA0F0FFu, .atmo_h = 45.0f },
+        { .name = "Frost",   .radius = 96.0f,  .mu = 129024.0f, .parent = BODY_SUN,     .orbit_r = 1900.0f, .orbit_phase = 4.4f,
+          .terrain = TERRAIN_FROST,   .amp = 5.0f,  .freq = 2.4f, .sea_level = -1.0f, .liquid = 0, .rings = 48, .segs = 72, .seed = 51u,
+          .atmo = 0xB8D0F0FFu, .atmo_h = 30.0f },
+        { .name = "Cinder",  .radius = 20.0f,  .mu = 2400.0f,   .parent = BODY_EMBER,   .orbit_r = 260.0f,  .orbit_phase = 1.1f, .tilt = 0.35f,
+          .terrain = TERRAIN_MOON,    .amp = 1.6f,  .freq = 3.0f, .sea_level = -100.0f, .liquid = 0, .rings = 32, .segs = 48, .seed = 61u },
+        { .name = "Fern",    .radius = 32.0f,  .mu = 6144.0f,   .parent = BODY_VERDANT, .orbit_r = 384.0f,  .orbit_phase = 3.9f, .tilt = 0.5f,
+          .terrain = TERRAIN_MOON,    .amp = 2.5f,  .freq = 3.0f, .sea_level = -100.0f, .liquid = 0, .rings = 40, .segs = 60, .seed = 67u },
+        { .name = "Sleet",   .radius = 24.0f,  .mu = 3456.0f,   .parent = BODY_FROST,   .orbit_r = 300.0f,  .orbit_phase = 5.3f, .tilt = 0.25f,
+          .terrain = TERRAIN_MOON,    .amp = 2.0f,  .freq = 3.0f, .sea_level = -100.0f, .liquid = 0, .rings = 36, .segs = 54, .seed = 71u },
     };
     w->t = 0;
     for (int i = 0; i < BODY_COUNT; i++) {
         body *b = &w->b[i];
         *b = defs[i];
-        /* circular orbit: centripetal acceleration equals the sun's gravity */
-        b->omega = b->orbit_r > 0 ? sqrtf(MU_SUN / (b->orbit_r * b->orbit_r * b->orbit_r)) : 0;
-        body_place(b, 0);
+        /* circular orbit: centripetal acceleration equals the parent's gravity */
+        float mu_par = b->parent >= 0 ? w->b[b->parent].mu : 0;
+        b->omega = b->orbit_r > 0 && b->parent >= 0 ? sqrtf(mu_par / (b->orbit_r * b->orbit_r * b->orbit_r)) : 0;
+        body_place(w, i, 0);
         b->prev = b->pos;
         /* bake the height grid: the mesh and the collision both read it */
         b->grid = malloc(sizeof(float) * (b->rings + 1) * b->segs);
@@ -55,7 +77,7 @@ void world_update(world *w, float dt) {
     w->t += dt;
     for (int i = 0; i < BODY_COUNT; i++) {
         w->b[i].prev = w->b[i].pos;
-        body_place(&w->b[i], w->t);
+        body_place(w, i, w->t);
     }
 }
 
@@ -86,13 +108,45 @@ int world_dominant(const world *w, v3 p) {
     return best;
 }
 
+v3 world_frame_accel(const world *w, int i) {
+    v3 a = v3_(0, 0, 0);
+    for (int j = i; w->b[j].parent >= 0; j = w->b[j].parent)
+        a = v3_add(a, world_gravity_from(w, w->b[j].parent, w->b[j].pos));
+    return a;
+}
+
 /* ---- terrain ---- */
+
+/* Bowls with raised rims scattered over a moon. Bigger craters are deeper. Heights stay within
+   about -1.8 amp .. +0.6 amp, so amp remains a valid upper bound for collision. */
+static float moon_craters(v3 dir, uint32_t seed, float amp) {
+    float h = 0;
+    for (int k = 0; k < 22; k++) {
+        v3 c = v3_(noise_hashf(k, 0, 77, seed) * 2 - 1, noise_hashf(k, 1, 77, seed) * 2 - 1, noise_hashf(k, 2, 77, seed) * 2 - 1);
+        float l = v3_len(c);
+        if (l < 0.15f) continue;
+        c = v3_scale(c, 1.0f / l);
+        float u = noise_hashf(k, 3, 77, seed);
+        float R = 0.10f + u * u * 0.35f;                    /* angular radius, mostly small */
+        float d = v3_dot(dir, c);
+        if (d > 1) d = 1;
+        if (d < -1) d = -1;
+        float x = acosf(d) / R;                             /* 0 at the centre, 1 at the rim */
+        if (x > 1.4f) continue;
+        float depth = amp * (0.5f + 1.2f * R / 0.45f);
+        if (x < 1) h += depth * (x * x - 1);                /* bowl */
+        float r = (x - 1.0f) / 0.2f;
+        h += depth * 0.3f * expf(-r * r);                   /* rim */
+    }
+    return h;
+}
 
 float world_height_raw(const world *w, int i, v3 dir) {
     const body *b = &w->b[i];
     if (b->amp <= 0) return 0;
     v3 p = v3_add(v3_scale(dir, b->freq), v3_(7.3f, 1.9f, 4.1f));
     float n = noise_fbm(p, 3, b->seed);
+    if (b->terrain == TERRAIN_MOON) return (n - 0.5f) * 0.6f * b->amp + moon_craters(dir, b->seed, b->amp);
     return (n - 0.5f) * 2.0f * b->amp;
 }
 
@@ -162,6 +216,11 @@ uint32_t world_color(const world *w, int i, v3 dir, float raw_h) {
         if (t < 0.9f)   return mix3(40, 12, 8, 110, 35, 20, t / 0.9f);             /* dark lowlands */
         if (t < 2.0f)   return mix3(110 + v * 30, 35 + v * 10, 20, 205, 95, 50, (t - 0.9f) / 1.1f);
         return mix3(205, 95, 50, 245, 190, 130, (t - 2.0f) / 0.6f);                /* bright peaks */
+    case TERRAIN_MOON: {
+        float k = b->amp > 0 ? raw_h / b->amp : 0;   /* about -1.8 in crater floors .. 0.6 on rims */
+        float g = 148 + v * 36 + k * 28;             /* dark bowls, pale rims */
+        return rgb(g, g, g + 8);
+    }
     case TERRAIN_FROST:
         if (t <= 0.001f) return mix3(150, 185, 220, 175, 205, 232, 0.5f + v);       /* frozen lake */
         if (t < 0.6f)   return rgb(222 + v * 16, 232 + v * 12, 244);                /* snowfield */

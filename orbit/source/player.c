@@ -107,10 +107,9 @@ void player_update(player *p, const world *w, const player_input *in, float dt) 
             jumped = 1;
         }
     } else {
-        /* gravity from everything, minus the sun's pull at the planet centre: the frame
-           already accelerates that way because the orbit is circular */
-        v3 g = world_gravity_at(w, p->pos);
-        if (p->dom != BODY_SUN) g = v3_sub(g, world_gravity_from(w, BODY_SUN, dom->pos));
+        /* gravity from everything, minus what accelerates the dominant body's own frame
+           (the sun's pull at a planet's centre; for a moon also its planet's pull) */
+        v3 g = v3_sub(world_gravity_at(w, p->pos), world_frame_accel(w, p->dom));
         p->vel = v3_add(p->vel, v3_scale(g, dt));
         v3 view = v3_norm(in->view_forward);
         v3 vup = v3_len(in->view_up) > 1e-4f ? v3_norm(in->view_up) : p->up;

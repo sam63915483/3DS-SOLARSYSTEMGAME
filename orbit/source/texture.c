@@ -94,6 +94,7 @@ detail_kind texture_kind_for(terrain_kind t) {
     switch (t) {
     case TERRAIN_EMBER: return DETAIL_ROCK;
     case TERRAIN_FROST: return DETAIL_SNOW;
+    case TERRAIN_MOON: return DETAIL_ROCK;
     default: return DETAIL_GRASS;
     }
 }

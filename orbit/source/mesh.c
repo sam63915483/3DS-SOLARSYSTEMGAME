@@ -227,6 +227,7 @@ static prop_plan plan_for(terrain_kind t) {
     case TERRAIN_VERDANT: p.trees = 400; p.rocks = 110; p.rock_a = 0x8A8278FF; p.rock_b = 0x6E665CFF; break;
     case TERRAIN_EMBER:   p.trees = 150; p.rocks = 170; p.rock_a = 0x6E3524FF; p.rock_b = 0x4E2418FF; p.rock_scale = 1.6f; break;
     case TERRAIN_FROST:   p.trees = 200; p.rocks = 60; p.shards = 90; p.rock_a = 0xB4C2D2FF; p.rock_b = 0x94A6BAFF; break;
+    case TERRAIN_MOON:    p.rocks = 70; p.rock_a = 0x9A9AA0FF; p.rock_b = 0x6C6C74FF; p.rock_scale = 0.9f; break;
     default: break;
     }
     return p;

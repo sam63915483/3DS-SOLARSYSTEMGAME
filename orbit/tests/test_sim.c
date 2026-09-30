@@ -13,14 +13,46 @@ static v3 world_vel(const player *p, const world *w) { return v3_add(p->vel, w->
 int main(void) {
     world w; world_init(&w);
 
-    /* orbits: velocity matches finite difference, centripetal accel matches sun gravity */
+    /* orbits: velocity matches finite difference, centripetal accel matches the parent's gravity */
     world_update(&w, DT);
     for (int i = 1; i < BODY_COUNT; i++) {
         v3 fd = v3_scale(v3_sub(w.b[i].pos, w.b[i].prev), 1.0f / DT);
         CHECK(v3_len(v3_sub(fd, w.b[i].vel)) < 0.05f, "body velocity matches its motion");
-        v3 g = world_gravity_from(&w, BODY_SUN, w.b[i].pos);
+        v3 g = world_gravity_from(&w, w.b[i].parent, w.b[i].pos);
         float cent = w.b[i].orbit_r * w.b[i].omega * w.b[i].omega;
-        CHECK_NEAR(v3_len(g), cent, 1e-3f, "orbit is consistent with the sun's gravity");
+        CHECK_NEAR(v3_len(g), cent, 1e-3f, "orbit is consistent with the parent's gravity");
+        CHECK_NEAR(v3_len(v3_sub(w.b[i].pos, w.b[w.b[i].parent].pos)), w.b[i].orbit_r, 1e-2f, "body sits at its orbit radius from its parent");
+    }
+
+    /* moons: a quarter the size of their planet, airless, cratered, and they own their surface */
+    {
+        int moons[3] = { BODY_CINDER, BODY_FERN, BODY_SLEET };
+        for (int m = 0; m < 3; m++) {
+            const body *b = &w.b[moons[m]], *par = &w.b[b->parent];
+            CHECK(b->parent >= BODY_EMBER && b->parent <= BODY_FROST, "moon orbits a planet");
+            CHECK_NEAR(b->radius / par->radius, 0.25f, 1e-3f, "moon is a quarter of its planet's radius");
+            CHECK(b->atmo == 0, "moon has no atmosphere");
+            v3 up = v3_norm(v3_(0.3f, 0.8f, -0.5f));
+            v3 near_surface = v3_add(b->pos, v3_scale(up, b->radius + b->amp + 12.0f));
+            CHECK(world_dominant(&w, near_surface) == moons[m], "moon's own pull wins 12 units above its surface");
+            float lo = 1e9f, hi = -1e9f;
+            for (int k = 0; k < 400; k++) {
+                float a = k * 0.37f, e = k * 0.11f;
+                v3 d = v3_norm(v3_(cosf(a) * cosf(e), sinf(e), sinf(a) * cosf(e)));
+                float h = world_height_raw(&w, moons[m], d);
+                if (h < lo) lo = h;
+                if (h > hi) hi = h;
+            }
+            CHECK(lo < -0.6f * b->amp, "moon has crater floors well below the mean surface");
+            CHECK(hi <= b->amp, "moon heights stay under the collision bound");
+            CHECK(hi > 0.1f * b->amp, "moon has raised rims");
+        }
+        /* a planet's frame accelerates with the sun's pull; a moon's adds its planet's */
+        v3 fa = world_frame_accel(&w, BODY_VERDANT);
+        CHECK(v3_len(v3_sub(fa, world_gravity_from(&w, BODY_SUN, w.b[BODY_VERDANT].pos))) < 1e-4f, "planet frame acceleration is the sun's pull");
+        v3 fm = world_frame_accel(&w, BODY_FERN);
+        v3 want = v3_add(world_gravity_from(&w, BODY_VERDANT, w.b[BODY_FERN].pos), world_gravity_from(&w, BODY_SUN, w.b[BODY_VERDANT].pos));
+        CHECK(v3_len(v3_sub(fm, want)) < 1e-4f, "moon frame acceleration adds its planet's pull");
     }
 
     /* gravity above a planet points at it and beats the sun there */
@@ -38,6 +70,30 @@ int main(void) {
     for (int f = 0; f < 600; f++) { world_update(&w, DT); player_update(&p, &w, &in, DT); }
     v3 off1 = v3_sub(p.pos, w.b[BODY_START].pos);
     CHECK(v3_len(v3_sub(off0, off1)) < 1e-2f, "standing player rides the planet without drift");
+
+    /* the same on a moon, whose frame also swings around its planet; then a hop stays in the
+       moon's frame and comes back down */
+    {
+        world_init(&w);
+        player_spawn(&p, &w, BODY_FERN);
+        player_input moon_in; memset(&moon_in, 0, sizeof moon_in); moon_in.cam_forward = v3_(1, 0, 0); moon_in.view_forward = v3_(1, 0, 0); moon_in.view_up = p.up;
+        v3 m0 = v3_sub(p.pos, w.b[BODY_FERN].pos);
+        for (int f = 0; f < 600; f++) { world_update(&w, DT); player_update(&p, &w, &moon_in, DT); }
+        v3 m1 = v3_sub(p.pos, w.b[BODY_FERN].pos);
+        CHECK(p.dom == BODY_FERN && p.grounded, "standing on the moon stays grounded on the moon");
+        CHECK(v3_len(v3_sub(m0, m1)) < 1e-2f, "standing player rides the moon without drift");
+        moon_in.jump_pressed = 1;
+        int left_frame = 0, landed = 0;
+        for (int f = 0; f < 900; f++) {
+            world_update(&w, DT); player_update(&p, &w, &moon_in, DT); moon_in.jump_pressed = 0;
+            if (p.dom != BODY_FERN) left_frame = 1;
+            if (f > 10 && p.grounded) { landed = 1; break; }
+        }
+        CHECK(!left_frame, "a jump on the moon stays in the moon's frame");
+        CHECK(landed, "and comes back down onto the moon");
+        world_init(&w);
+        player_spawn(&p, &w, BODY_START);
+    }
     CHECK(p.grounded, "still grounded after ten seconds");
     CHECK(p.speed < 1e-3f, "no relative speed while standing");
 

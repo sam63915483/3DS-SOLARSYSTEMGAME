@@ -51,28 +51,29 @@ void hud_draw(C3D_RenderTarget *bottom, const world *w, const player *p, const c
     snprintf(buf, sizeof buf, "SPD %.1f  ALT %.1f  G %.1f", p->speed, p->altitude, v3_len(world_gravity_at(w, p->pos)));
     font_draw(buf, 8, 62, 2, white);
 
-    font_draw("DISTANCE TO", 8, 90, 1, dim);
-    float y = 102;
+    font_draw("DISTANCE TO", 8, 88, 1, dim);
+    float y = 99;
     for (int i = 0; i < BODY_COUNT; i++) {
         if (i == p->dom) continue;
         float d = v3_len(v3_sub(w->b[i].pos, p->pos)) - w->b[i].radius;
         snprintf(buf, sizeof buf, "%-8s %6.0f", w->b[i].name, d);
-        font_draw(buf, 16, y, 1, white);
-        y += 11;
+        /* moons are listed indented under their planet's colour of text */
+        font_draw(buf, w->b[i].parent > BODY_SUN ? 24 : 16, y, 1, w->b[i].parent > BODY_SUN ? dim : white);
+        y += 10;
     }
 
     /* controls */
-    C2D_DrawRectSolid(0, 152, 0, 320, 1, C2D_Color32(0x30, 0x34, 0x44, 0xFF));
+    C2D_DrawRectSolid(0, 161, 0, 320, 1, C2D_Color32(0x30, 0x34, 0x44, 0xFF));
     if (player_on_foot(p)) {
-        font_draw("PAD  LOOK       A  WALK", 8, 160, 1.5f, dim);
-        font_draw("X  JUMP", 8, 176, 1.5f, dim);
-        if (c->gyro) font_draw("MOVE THE 3DS TO LOOK AROUND", 8, 192, 1.5f, dim);
-        else if (c->first_person) font_draw("(GYRO BUTTON: MOTION LOOK)", 8, 192, 1.5f, dim);
-        else font_draw("(VIEW BUTTON: FIRST PERSON)", 8, 192, 1.5f, dim);
+        font_draw("PAD  LOOK       A  WALK", 8, 166, 1.5f, dim);
+        font_draw("X  JUMP", 8, 180, 1.5f, dim);
+        if (c->gyro) font_draw("MOVE THE 3DS TO LOOK AROUND", 8, 194, 1.5f, dim);
+        else if (c->first_person) font_draw("(GYRO BUTTON: MOTION LOOK)", 8, 194, 1.5f, dim);
+        else font_draw("(VIEW BUTTON: FIRST PERSON)", 8, 194, 1.5f, dim);
     } else {
-        font_draw("PAD  LOOK       L/R ROLL", 8, 160, 1.5f, dim);
-        font_draw("X  UP     B  DOWN", 8, 176, 1.5f, dim);
-        font_draw("A  BOOST  Y  BRAKE", 8, 192, 1.5f, dim);
+        font_draw("PAD  LOOK       L/R ROLL", 8, 166, 1.5f, dim);
+        font_draw("X  UP     B  DOWN", 8, 180, 1.5f, dim);
+        font_draw("A  BOOST  Y  BRAKE", 8, 194, 1.5f, dim);
     }
     font_draw("SELECT RESPAWN   START QUIT", 8, 216, 1.5f, dim);
 }
