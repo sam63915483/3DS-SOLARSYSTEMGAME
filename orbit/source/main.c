@@ -26,19 +26,29 @@ static float pad_axis(int v) {
    it on is averaged as the zero point, and the zero keeps tracking slowly while the console is
    near still. Flip GYRO_PITCH_SIGN / GYRO_YAW_SIGN if a direction feels inverted on hardware. */
 #define GYRO_GAIN        1.0f     /* camera degrees per console degree */
-#define GYRO_DEADZONE    0.5f     /* degrees per second, hides sensor noise while still */
+#define GYRO_DEADZONE    0.8f     /* degrees per second, hides sensor noise while still */
 #define GYRO_MAX_RATE  300.0f     /* degrees per second, clamps glitches */
-#define GYRO_STILL       3.0f     /* below this rate the zero point is allowed to drift along */
-#define GYRO_CALIB_FRAMES 30
-#define GYRO_PITCH_SIGN  1.0f
-#define GYRO_YAW_SIGN    1.0f
+#define GYRO_STILL       4.0f     /* below this rate the zero point is allowed to drift along */
+#define GYRO_WARMUP_FRAMES 30     /* readings right after switching on are stale; skip them */
+#define GYRO_CALIB_FRAMES  45
+#define GYRO_CALIB_SPREAD  6.0f   /* dps; more wobble than this during calibration restarts it */
+#define GYRO_PITCH_SIGN (-1.0f)   /* both inverted on real hardware (confirmed on the user's 3DS) */
+#define GYRO_YAW_SIGN   (-1.0f)
 
 static int sensors_on;
 static float gyro_dps_per_raw = 1.0f / 14.375f;
+static int warmup_left;     /* frames to ignore after switching the gyro on */
 static int calib_left;      /* frames of the initial hold-still average still to collect */
-static v3 calib_sum, bias;  /* degrees per second */
+static v3 calib_sum, calib_lo, calib_hi, bias;  /* degrees per second */
 
-static int sensors_calibrating(void) { return sensors_on && calib_left > 0; }
+static void calib_restart(void) {
+    calib_left = GYRO_CALIB_FRAMES;
+    calib_sum = v3_(0, 0, 0);
+    calib_lo = v3_(1e9f, 1e9f, 1e9f);
+    calib_hi = v3_(-1e9f, -1e9f, -1e9f);
+}
+
+static int sensors_calibrating(void) { return sensors_on && (warmup_left > 0 || calib_left > 0); }
 
 static void sensors_set(int on) {
     if (on == sensors_on) return;
@@ -48,8 +58,9 @@ static void sensors_set(int on) {
         float k;
         if (R_SUCCEEDED(HIDUSER_GetGyroscopeRawToDpsCoefficient(&k)) && k > 0)
             gyro_dps_per_raw = k > 1.0f ? 1.0f / k : k;   /* raw per dps on hardware; accept either */
-        calib_left = GYRO_CALIB_FRAMES;
-        calib_sum = bias = v3_(0, 0, 0);
+        warmup_left = GYRO_WARMUP_FRAMES;
+        calib_restart();
+        bias = v3_(0, 0, 0);
     } else {
         HIDUSER_DisableGyroscope();
     }
@@ -64,13 +75,24 @@ static void sensors_read(float *pitch, float *yaw, float dt) {
     const s16 *raw = (const s16 *)&r;
     v3 w = v3_scale(v3_(raw[0], raw[1], raw[2]), gyro_dps_per_raw);   /* deg/s about x, y, z */
     *pitch = *yaw = 0;
+    if (warmup_left > 0) {
+        if (raw[0] || raw[1] || raw[2]) warmup_left--;   /* all-zero means not awake yet */
+        return;
+    }
     if (calib_left > 0) {
         calib_sum = v3_add(calib_sum, w);
+        calib_lo = v3_(fminf(calib_lo.x, w.x), fminf(calib_lo.y, w.y), fminf(calib_lo.z, w.z));
+        calib_hi = v3_(fmaxf(calib_hi.x, w.x), fmaxf(calib_hi.y, w.y), fmaxf(calib_hi.z, w.z));
+        v3 spread = v3_sub(calib_hi, calib_lo);
+        if (spread.x > GYRO_CALIB_SPREAD || spread.y > GYRO_CALIB_SPREAD || spread.z > GYRO_CALIB_SPREAD) {
+            calib_restart();   /* the console moved: start the hold-still average again */
+            return;
+        }
         if (--calib_left == 0) bias = v3_scale(calib_sum, 1.0f / GYRO_CALIB_FRAMES);
         return;
     }
     w = v3_sub(w, bias);
-    if (v3_len(w) < GYRO_STILL) bias = v3_add(bias, v3_scale(w, ease(0.4f, dt)));   /* slow re-zero */
+    if (v3_len(w) < GYRO_STILL) bias = v3_add(bias, v3_scale(w, ease(0.8f, dt)));   /* re-zero while still */
     float p = clampf(deadzone(w.x), GYRO_MAX_RATE);
     float y = clampf(deadzone(-w.z), GYRO_MAX_RATE);
     const float to_rad = 3.14159265f / 180.0f * GYRO_GAIN;
