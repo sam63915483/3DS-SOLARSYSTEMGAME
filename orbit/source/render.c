@@ -26,10 +26,10 @@ static C3D_Light light;
 static C3D_LightLut lutPhong;
 
 static gpu_mesh bodies[BODY_COUNT], props[BODY_COUNT][8], grass[BODY_COUNT][GRASS_CELLS];
-static gpu_mesh water[BODY_COUNT], shell_in[BODY_COUNT], shell_out[BODY_COUNT], clouds[BODY_COUNT];
+static gpu_mesh water[BODY_COUNT], shell_in[BODY_COUNT], clouds[BODY_COUNT];
 static gpu_mesh astro_body, astro_arm, astro_leg, flame_outer, flame_inner, stars;
 static C3D_Tex detail[BODY_COUNT], water_tex, cloud_tex;
-static int has_detail[BODY_COUNT], has_water_tex, has_cloud_tex, aParams;
+static int has_detail[BODY_COUNT], has_water_tex, has_cloud_tex;
 static float sun_sx, sun_sy, sun_k;
 
 static const C3D_Material mat_lit = {
@@ -84,7 +84,6 @@ void render_init(const world *w) {
     aProj = shaderInstanceGetUniformLocation(program_atmo.vertexShader, "projection");
     aMV = shaderInstanceGetUniformLocation(program_atmo.vertexShader, "modelView");
     aSun = shaderInstanceGetUniformLocation(program_atmo.vertexShader, "sundir");
-    aParams = shaderInstanceGetUniformLocation(program_atmo.vertexShader, "params");
 
     C3D_LightEnvInit(&lightEnv);
     C3D_LightEnvMaterial(&lightEnv, &mat_lit);
@@ -102,11 +101,10 @@ void render_init(const world *w) {
         for (int g = 0; g < GRASS_CELLS; g++) grass[i][g] = upload(mesh_grass(w, i, g));
         has_detail[i] = !b->emissive && texture_make_detail(&detail[i], texture_kind_for(b->terrain), b->seed);
         gpu_mesh none = { 0, 0, 0, 0 };
-        shell_in[i] = shell_out[i] = clouds[i] = none;
+        shell_in[i] = clouds[i] = none;
         if (b->atmo) {
-            /* two soft layers: a dense low one and a faint high one */
-            shell_in[i] = upload(mesh_sphere(b->radius + b->atmo_h * 0.35f, 24, 36, (b->atmo & 0xFFFFFF00u) | 0xC0));
-            shell_out[i] = upload(mesh_sphere(b->radius + b->atmo_h * 1.0f, 24, 36, (b->atmo & 0xFFFFFF00u) | 0x70));
+            /* one rim-glow shell */
+            shell_in[i] = upload(mesh_sphere(b->radius + b->atmo_h * 0.7f, 24, 36, (b->atmo & 0xFFFFFF00u) | 0xE0));
             if (b->terrain != TERRAIN_EMBER)
                 clouds[i] = upload(mesh_sphere_uv(b->radius + b->atmo_h * 0.45f, 28, 42, 0xFFFFFFD8u, 2.0f));
         }
@@ -403,7 +401,6 @@ void render_scene(const world *w, const player *p, const camera *c, float time) 
         C3D_FVUnifSet(GPU_VERTEX_SHADER, aSun, sv.x, sv.y, sv.z, 0.0f);
         mtx_translate(&model, b->pos);
         draw_ex(&shell_in[i], &model, NULL, NULL, aMV);
-    }; 108,109c            shell_in[i] = upload(mesh_sphere(b->radius + b->atmo_h * 0.7f, 24, 36, (b->atmo & 0xFFFFFF00u) | 0xE0));; 105s|shell_in[i] = shell_out[i] = clouds[i] = none;|shell_in[i] = clouds[i] = none;|; 87d; 32s|, aParams;|;|; 29s|shell_in[BODY_COUNT], shell_out[BODY_COUNT], clouds[BODY_COUNT]|shell_in[BODY_COUNT], clouds[BODY_COUNT]|
     }
     C3D_LightEnvBind(&lightEnv);
     C3D_BindProgram(&program);
