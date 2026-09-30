@@ -6,7 +6,6 @@
 #include "texture.h"
 #include "vshader_shbin.h"
 #include "atmosphere_shbin.h"
-#include <stdio.h>
 
 #define DISPLAY_TRANSFER_FLAGS \
     (GX_TRANSFER_FLIP_VERT(0) | GX_TRANSFER_OUT_TILED(0) | GX_TRANSFER_RAW_COPY(0) | \
@@ -27,8 +26,9 @@ static C3D_Light light;
 static C3D_LightLut lutPhong;
 
 static gpu_mesh bodies[BODY_COUNT], props[BODY_COUNT][8], grass[BODY_COUNT][GRASS_CELLS];
-#define SHELLS 1   /* one atmosphere shell, drawn from both sides: band outside, sky inside */
-static const float shell_r[SHELLS] = { 0.7f };
+#define SHELLS 4   /* concentric atmosphere layers, each a soft band, stacking into a gradient */
+static const float shell_r[SHELLS] = { 0.35f, 0.75f, 1.20f, 1.70f };
+static const u32 shell_a[SHELLS] = { 0xC0, 0x70, 0x40, 0x24 };
 static gpu_mesh water[BODY_COUNT], shells[BODY_COUNT][SHELLS], clouds[BODY_COUNT];
 static gpu_mesh astro_body, astro_arm, astro_leg, flame_outer, flame_inner, stars;
 static C3D_Tex detail[BODY_COUNT], water_tex, cloud_tex;
@@ -110,7 +110,7 @@ void render_init(const world *w) {
         if (b->atmo) {
             /* several faint layers whose rims stack into one soft gradient */
             for (int s = 0; s < SHELLS; s++)
-                shells[i][s] = upload(mesh_sphere(b->radius + b->atmo_h * shell_r[s], 32, 48, b->atmo));
+                shells[i][s] = upload(mesh_sphere(b->radius + b->atmo_h * shell_r[s], 24, 36, (b->atmo & 0xFFFFFF00u) | shell_a[s]));
             if (b->terrain != TERRAIN_EMBER)
                 clouds[i] = upload(mesh_sphere_uv(b->radius + b->atmo_h * 0.68f, 28, 42, 0xFFFFFFD8u, 2.0f));
         }
@@ -290,10 +290,34 @@ static void draw_player(const player *p, const camera *c, float time) {
 
 static float clamp01(float x) { return x < 0 ? 0 : (x > 1 ? 1 : x); }
 
+/* Sky colour seen from the camera: the dominant body's atmosphere, fading with altitude and
+   with the sun below the horizon, warm at the terminator. Returns the strength 0..1. */
+static float sky_color(const world *w, const player *p, const camera *c, u32 *out) {
+    const body *b = &w->b[p->dom];
+    float r = 2, g = 2, bl = 10, k = 0;
+    if (b->atmo) {
+        v3 rel = v3_sub(c->pos, b->pos);
+        float alt = v3_len(rel) - b->radius;
+        float dens = clamp01(1.0f - alt / b->atmo_h);
+        v3 up = v3_norm(rel), sun = v3_norm(v3_sub(w->b[BODY_SUN].pos, c->pos));
+        float e = v3_dot(up, sun);
+        float day = clamp01((e + 0.12f) / 0.40f);
+        float strength = (b->atmo & 0xFF) / 255.0f;
+        k = dens * day * strength;
+        float ar = (b->atmo >> 24) & 0xFF, ag = (b->atmo >> 16) & 0xFF, ab = (b->atmo >> 8) & 0xFF;
+        /* warm tint when the sun is near the horizon */
+        float warm = clamp01(1.0f - fabsf(e) / 0.25f) * dens * 0.7f;
+        ar = ar + (235 - ar) * warm; ag = ag + (130 - ag) * warm; ab = ab + (60 - ab) * warm;
+        r = 2 + (ar - 2) * k; g = 2 + (ag - 2) * k; bl = 10 + (ab - 10) * k;
+    }
+    *out = ((u32)r << 24) | ((u32)g << 16) | ((u32)bl << 8) | 0xFF;
+    return k;
+}
+
 void render_scene(const world *w, const player *p, const camera *c, float time) {
-    /* space is black; the blue sky is the atmosphere shell seen from inside, drawn later */
-    float skyk = 0;
-    C3D_RenderTargetClear(top, C3D_CLEAR_ALL, 0x02020AFF, 0);
+    u32 sky;
+    float skyk = sky_color(w, p, c, &sky);
+    C3D_RenderTargetClear(top, C3D_CLEAR_ALL, sky, 0);
     C3D_FrameDrawOn(top);
     prepare_state();
     cur_mode = 0;
@@ -311,16 +335,14 @@ void render_scene(const world *w, const player *p, const camera *c, float time) 
 
     C3D_Mtx model;
     /* stars follow the camera so they never get closer; they fade as the sky brightens */
-    /* stars are always drawn; the atmosphere shell blended over them by day hides them */
-    float star_k = 1.0f;
+    /* stars stay full until the sky is properly bright, then fade out */
+    float star_k = 1.0f - clamp01((skyk - 0.35f) / 0.45f);
     if (star_k > 0.02f) {
         C3D_Material mat_stars = mat_glow;
-        mat_stars.emission[0] = mat_stars.emission[1] = mat_stars.emission[2] = star_k;
+        mat_stars.emission[0] = mat_stars.emission[1] = mat_stars.emission[2] = star_k > 1 ? 1 : star_k;
         mtx_translate(&model, c->pos);
         C3D_CullFace(GPU_CULL_NONE);
-        C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ONE, GPU_ONE, GPU_ONE);
         draw(&stars, &model, &mat_stars);
-        C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
         C3D_CullFace(GPU_CULL_BACK_CCW);
     }
 
@@ -365,9 +387,7 @@ void render_scene(const world *w, const player *p, const camera *c, float time) 
         draw_ex(&water[i], &model, &mat_water, has_water_tex ? &water_tex : NULL, uMV);
     }
 
-    /* clouds: lit, textured alpha, drifting; outside faces only so they never dim the sky
-       from the ground */
-    C3D_CullFace(GPU_CULL_BACK_CCW);
+    /* clouds: lit, textured alpha, drifting */
     for (int i = 0; i < BODY_COUNT; i++) {
         if (!clouds[i].count || !has_cloud_tex) continue;
         mtx_translate(&model, w->b[i].pos);
@@ -375,9 +395,9 @@ void render_scene(const world *w, const player *p, const camera *c, float time) 
         draw_ex(&clouds[i], &model, &mat_lit, &cloud_tex, uMV);
     }
 
-    /* atmosphere shell: its own shader, no lighting, drawn from both sides. From outside it
-       is a soft band; from inside its far side is the sky. It fades as the camera crosses it. */
-    C3D_CullFace(GPU_CULL_NONE);
+    /* atmosphere shells: soft bands with their own shader, outside faces only, no lighting.
+       Each layer fades out as the camera passes through it. */
+    C3D_CullFace(GPU_CULL_BACK_CCW);
     C3D_BindProgram(&program_atmo);
     C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, aProj, &proj);
     C3D_LightEnvBind(NULL);
