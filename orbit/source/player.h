@@ -19,6 +19,7 @@ typedef struct {
     float jet_roll;  /* -1..1 roll jets (visual only) */
     v3 brake_dir;    /* world-space direction the brake jet fires (along travel), zero if not braking */
     v3 up;           /* away from the dominant body */
+    v3 ground_n;     /* normal of the ground last stood on; walking follows the plane it defines */
     v3 facing;       /* unit tangent, where the model looks on the ground */
     v3 body_up, body_fwd; /* smoothed model orientation: eases between upright/facing on the
                              ground and the camera view in flight, so it never snaps */
@@ -47,12 +48,14 @@ void player_update(player *p, const world *w, const player_input *in, float dt);
 /* True when the player should use ground-style controls and camera. */
 static inline int player_on_foot(const player *p) { return p->grounded || p->swimming; }
 /* True while the orientation stays locked to the planet: on foot, or airborne inside a
-   planet's atmosphere. Free look (and L/R roll) only unlocks above the atmosphere; airless moons
-   unlock the moment you leave the ground. */
+   planet's atmosphere, or within 15 units of an airless moon. Free look (and L/R roll) only
+   unlocks above that. */
 static inline int player_locked(const player *p, const world *w) {
     const body *b = &w->b[p->dom];
     if (p->in_core) return 0;   /* weightless in the core: spin freely */
-    return player_on_foot(p) || (b->atmo && p->altitude < b->atmo_h);
+    /* moons have no air, but pretend to a thin one so a hop off the ground keeps you upright */
+    float lock_h = b->atmo ? b->atmo_h : (b->caves.enabled ? 15.0f : 0.0f);
+    return player_on_foot(p) || p->altitude < lock_h;
 }
 
 #endif

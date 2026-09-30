@@ -136,7 +136,7 @@ int main(void) {
             float f = moon_field(&w, moons[m], v3_sub(p.pos, b->pos));
             CHECK(f < 0 && f > -PLAYER_HALF_HEIGHT - 0.6f, "feet on the rock, head in the air");
             in.my = 1;
-            int stuck = 0; v3 last = p.pos;
+            int stuck = 0; v3 last = p.pos, walk_start = p.pos;
             for (int i = 0; i < 300; i++) {
                 player_update(&p, &w, &in, DT);
                 in.cam_forward = in.view_forward = p.facing; in.view_up = p.up;
@@ -144,6 +144,7 @@ int main(void) {
             }
             CHECK(moon_field(&w, moons[m], v3_sub(p.pos, b->pos)) < 0, "after walking 5 s the player is still in open air, not in rock");
             CHECK(stuck == 0, "and never got stuck");
+            CHECK(v3_len(v3_sub(p.pos, walk_start)) > 12.0f, "walking 5 s along a sloping, bending tunnel covers real ground");
             camera cam; camera_init(&cam, &p);
             camera_input cin; memset(&cin, 0, sizeof cin);
             for (int i = 0; i < 90; i++) camera_update(&cam, &w, &p, &cin, DT);
@@ -169,6 +170,14 @@ int main(void) {
             in.thrust_fwd = 0;
             for (int i = 0; i < 600; i++) player_update(&p, &w, &in, DT);   /* coast into the wall */
             CHECK(moon_field(&w, moons[m], v3_sub(p.pos, b->pos)) < 0.2f, "coasting into the cavern wall stops you at it, not inside it");
+        }
+        /* a hop on a moon keeps the look locked; well above it, free look */
+        {
+            player p; memset(&p, 0, sizeof p);
+            p.dom = moons[m]; p.grounded = 0; p.altitude = 5;
+            CHECK(player_locked(&p, &w), "5 up off a moon the look is still locked");
+            p.altitude = 20;
+            CHECK(!player_locked(&p, &w), "20 up it is free");
         }
         /* a player standing on the surface away from the caves stays on the terrain */
         {

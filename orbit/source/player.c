@@ -42,6 +42,7 @@ void player_spawn(player *p, const world *w, int bi) {
     p->brake_dir = v3_(0, 0, 0);
     p->facing = v3_(1, 0, 0);
     p->body_up = p->up;
+    p->ground_n = p->up;
     p->body_fwd = p->facing;
     p->move_dir = v3_(0, 0, 0);
     p->speed = 0;
@@ -110,7 +111,7 @@ static int moon_contact(player *p, const world *w, int i, int jumped) {
     if (gap > (snap ? GROUND_SNAP : 0.0f)) return 0;
     v3 g = moon_grad_wide(w, i, rel, 0.5f);
     v3 n = v3_len(g) > 1e-5f ? v3_norm(v3_scale(g, -1.0f)) : up;   /* out of the rock */
-    int floor_like = v3_dot(n, up) > 0.35f;   /* up to about 70 degrees counts as ground */
+    int floor_like = v3_dot(n, up) > 0.17f;   /* up to about 80 degrees counts as ground: walking follows it */
     if (!floor_like && p->grounded && !jumped && gap < 0) {
         /* a wall in the way while walking: if there is room a step up, take the step */
         v3 lifted = v3_add(rel, v3_scale(up, 0.6f));
@@ -129,6 +130,7 @@ static int moon_contact(player *p, const world *w, int i, int jumped) {
     p->up = up;
     float into = v3_dot(p->vel, n);
     if (into < 0 || snap) p->vel = v3_sub(p->vel, v3_scale(n, into));
+    if (floor_like || touching) p->ground_n = n;
     return floor_like || touching;
 }
 
@@ -177,9 +179,15 @@ void player_update(player *p, const world *w, const player_input *in, float dt) 
             jumped = 1;
         }
     } else if (p->grounded) {
-        v3 vt = v3_tangent(p->vel, p->up);
+        /* walk along the ground we stand on, not the horizontal: on a slope the velocity
+           follows the slope, so climbing is full speed and walking down never leaves the floor */
+        v3 gn = v3_len(p->ground_n) > 0.5f ? p->ground_n : p->up;
+        v3 vt = v3_tangent(p->vel, gn);
+        v3 want = v3_tangent(move, gn);
+        float wl = v3_len(want);
+        if (wl > 1e-4f) want = v3_scale(want, mlen / wl);
         float speed = WALK_SPEED * (p->in_water ? WADE_FACTOR : 1.0f);
-        vt = v3_lerp(vt, v3_scale(move, speed), ease(12.0f, dt));
+        vt = v3_lerp(vt, v3_scale(want, speed), ease(12.0f, dt));
         p->vel = vt;
         if (in->jump_pressed) {
             p->vel = v3_add(p->vel, v3_scale(p->up, JUMP_SPEED));
@@ -244,6 +252,7 @@ void player_update(player *p, const world *w, const player_input *in, float dt) 
         p->up = n;
         float radial = v3_dot(p->vel, n);
         if (radial < 0 || snap) p->vel = v3_sub(p->vel, v3_scale(n, radial));
+        p->ground_n = n;
         touching = 1;
     }
     if (!jumped) p->grounded = touching;

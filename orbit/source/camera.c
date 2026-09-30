@@ -132,10 +132,9 @@ void camera_update(camera *c, const world *w, const player *p, const camera_inpu
         c->view_up = v3_lerp(c->view_up, tu, k);
         orthonormalize(c);
     } else {
-        /* just took off from an airless moon: ease the look level so the body stays upright
-           through the jump. Leaving an atmosphere needs nothing, the view is already upright
-           and pulling it level would be the snap the user felt. */
-        if (c->was_grounded && !w->b[p->dom].atmo) c->level_t = LEVEL_TIME;
+        /* leaving the locked zone needs no levelling: the view is already upright, and pulling it
+           level was the snap the user felt */
+        (void)LEVEL_TIME;
         if (c->level_t > 0) {
             /* ease the look back to level so the body can stay upright through the jump;
                the pull fades out as the pad takes over */
