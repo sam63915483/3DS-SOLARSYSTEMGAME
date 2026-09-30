@@ -105,8 +105,8 @@ static void clear_tackle(fishing *f) {
 static void new_bite_timer(fishing *f) { f->bite_timer = frandf(&f->rng, 5.0f, 14.0f); }
 
 static int roll_tier(fishing *f, float d) {
-    float k = clamp01((d - 4.0f) / 10.0f);   /* long casts skew rarer */
-    float wc = 70 - 25 * k, wu = 25 + 15 * k, wr = 5 + 10 * k;
+    float k = clamp01((d - 4.0f) / 10.0f);   /* long casts skew a little rarer: 70/25/5 up to 58/32/10 */
+    float wc = 70 - 12 * k, wu = 25 + 7 * k, wr = 5 + 5 * k;
     float x = frandf(&f->rng, 0, wc + wu + wr);
     return x < wc ? 0 : (x < wc + wu ? 1 : 2);
 }
@@ -440,6 +440,7 @@ void fishing_update(fishing *f, const world *w, const player *p, const fishing_i
                     float d = surf_dist(p, f->anchor);
                     f->tier = roll_tier(f, d);
                     f->weight_frac = frandf(&f->rng, 0, 1);
+                    f->weight_frac *= f->weight_frac;   /* mostly small fish, the odd whopper */
                     f->fish_scale = FISH_SCALE[f->tier];
                     float bed = world_sea_radius(w, p->dom) - world_surface(w, p->dom, up_at(w, p, f->anchor));
                     f->spawn_depth = bed - 0.4f;

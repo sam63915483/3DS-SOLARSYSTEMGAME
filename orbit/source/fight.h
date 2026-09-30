@@ -25,10 +25,13 @@ typedef struct {
     uint32_t rng;
 } fight;
 
-/* Uniform random in lo..hi from a tiny LCG; fishing.c shares it. */
+/* Uniform random in lo..hi: an LCG state run through a hash finaliser so consecutive draws
+   (tier, then weight) are not correlated. fishing.c and school.c share it. */
 static inline float frandf(uint32_t *s, float lo, float hi) {
     *s = *s * 1664525u + 1013904223u;
-    return lo + (hi - lo) * ((*s >> 8) / 16777216.0f);
+    uint32_t x = *s;
+    x ^= x >> 16; x *= 0x7feb352du; x ^= x >> 15; x *= 0x846ca68bu; x ^= x >> 16;
+    return lo + (hi - lo) * ((x >> 8) / 16777216.0f);
 }
 
 void fight_start(fight *f, int tier, float weight_frac, float distance, float taut0, uint32_t seed);
