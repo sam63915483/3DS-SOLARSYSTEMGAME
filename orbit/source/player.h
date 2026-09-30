@@ -12,6 +12,8 @@ typedef struct {
     int grounded;
     int swimming;    /* floating at the sea surface: ground controls, no gravity */
     int in_water;    /* any part of the body below the sea surface */
+    int in_cave;     /* inside a moon's tunnel or core cavern: cave walls instead of terrain */
+    int in_core;     /* inside the zero-g core cavern: free look */
     int thrusting;   /* any jet firing */
     int jet_up, jet_down, jet_fwd;  /* which jets are firing this frame */
     float jet_roll;  /* -1..1 roll jets (visual only) */
@@ -49,6 +51,7 @@ static inline int player_on_foot(const player *p) { return p->grounded || p->swi
    unlock the moment you leave the ground. */
 static inline int player_locked(const player *p, const world *w) {
     const body *b = &w->b[p->dom];
+    if (p->in_core) return 0;   /* weightless in the core: spin freely */
     return player_on_foot(p) || (b->atmo && p->altitude < b->atmo_h);
 }
 

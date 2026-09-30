@@ -12,6 +12,7 @@
 #include "fishing.h"
 #include "fishhud.h"
 #include "school.h"
+#include "fireflies.h"
 
 static float pad_axis(int v) {
     float a = v / 156.0f;
@@ -137,6 +138,7 @@ int main(void) {
     hud_init();
     fishing fish; fishing_init(&fish);
     school sch; school_init(&sch);
+    fireflies ff; fireflies_init(&ff);
 
     u64 last = osGetTime();
     float fps = 60;
@@ -203,9 +205,10 @@ int main(void) {
             fishing_update(&fish, &w, &p, &fin, dt);
         }
         school_update(&sch, &w, &p, dt);
+        fireflies_update(&ff, &w, &p, dt);
 
         C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
-        render_scene(&w, &p, &cam, &fish, &sch, w.t);
+        render_scene(&w, &p, &cam, &fish, &sch, &ff, w.t);
         C3D_LightEnvBind(NULL);
         C2D_Prepare();
         {

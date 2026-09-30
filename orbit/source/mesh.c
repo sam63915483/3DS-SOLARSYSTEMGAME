@@ -1,5 +1,6 @@
 #include "mesh.h"
 #include "noise.h"
+#include "cave.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -93,7 +94,19 @@ static uint32_t flat_color(const void *c, v3 dir, int ring, int seg) { (void)dir
 mesh mesh_planet(const world *w, int i) {
     sphere_ctx c = { w, i, 0, 0 };
     float rep = w->b[i].emissive ? 0 : w->b[i].radius / 4.0f;   /* one repeat every ~12.5 units at the equator */
-    return sphere_grid(w->b[i].rings, w->b[i].segs, rep, planet_radius, planet_color, &c, 1);
+    mesh m = sphere_grid(w->b[i].rings, w->b[i].segs, rep, planet_radius, planet_color, &c, 1);
+    if (w->b[i].cave.enabled) {
+        /* cut the cave mouth: drop the triangles whose centre falls in the hole */
+        int out = 0;
+        for (int t = 0; t + 2 < m.idx_count; t += 3) {
+            v3 a = vpos(&m.v[m.idx[t]]), b = vpos(&m.v[m.idx[t + 1]]), cc = vpos(&m.v[m.idx[t + 2]]);
+            v3 centre = v3_norm(v3_add(v3_add(a, b), cc));
+            if (world_in_hole(w, i, centre)) continue;
+            m.idx[out++] = m.idx[t]; m.idx[out++] = m.idx[t + 1]; m.idx[out++] = m.idx[t + 2];
+        }
+        m.idx_count = out;
+    }
+    return m;
 }
 
 mesh mesh_water(const world *w, int i, uint32_t col) {
@@ -462,6 +475,134 @@ mesh mesh_fish(void) {
     v3 root = v3_(0, 0, -0.22f), tt = v3_(0, 0.12f, -0.40f), tb = v3_(0, -0.12f, -0.40f);
     emit_tri(&m, root, tt, tb, v3_(0.2f, 0, -0.3f), 0x5A8058FF);
     emit_tri(&m, root, tb, tt, v3_(-0.2f, 0, -0.3f), 0x5A8058FF);
+    return m;
+}
+
+mesh mesh_gem(float r, uint32_t col) {
+    mesh m = { 0, 0, 0, 0 };
+    m.v = calloc(24, sizeof(vertex));
+    emit_octa(&m, v3_(0, 0, 0), AX, AY, AZ, r, r, r, col);
+    return m;
+}
+
+/* ---- caves: walls wound to face inward, so the usual back-face culling keeps the inside ---- */
+
+#define CAVE_SEGS 10
+#define ROCK_A 0x5A5462FF
+#define ROCK_B 0x48424FFF
+#define CRYSTAL_A 0x70E8FFFF
+#define CRYSTAL_B 0xA890FFFF
+
+/* Frame at tunnel point k: axis direction and two perpendiculars, carried along the path so the
+   rings do not twist. */
+static void tube_frames(const cave *c, v3 *u, v3 *t1, v3 *t2) {
+    for (int k = 0; k < c->npath; k++) {
+        int a = k < c->npath - 1 ? k : k - 1;
+        u[k] = v3_norm(v3_sub(c->path[a + 1], c->path[a]));
+        v3 prev = k ? t1[k - 1] : v3_any_perp(u[0]);
+        v3 p = v3_tangent(prev, u[k]);
+        t1[k] = v3_len(p) < 1e-3f ? v3_any_perp(u[k]) : v3_norm(p);
+        t2[k] = v3_cross(u[k], t1[k]);
+    }
+}
+
+static v3 ring_point(const cave *c, const v3 *t1, const v3 *t2, int k, int j, uint32_t seed) {
+    float a = 6.2831853f * j / CAVE_SEGS;
+    float rough = 0.88f + 0.24f * noise_hashf(k, j, 5, seed);   /* lumpy walls */
+    return v3_add(c->path[k], v3_scale(v3_add(v3_scale(t1[k], cosf(a)), v3_scale(t2[k], sinf(a))), c->radius[k] * rough));
+}
+
+mesh mesh_cave_tunnel(const world *w, int bi) {
+    const body *b = &w->b[bi];
+    const cave *c = &b->cave;
+    mesh m = { 0, 0, 0, 0 };
+    if (!c->enabled) return m;
+    v3 u[CAVE_PATH_MAX], t1[CAVE_PATH_MAX], t2[CAVE_PATH_MAX];
+    tube_frames(c, u, t1, t2);
+    m.v = calloc((c->npath - 1) * CAVE_SEGS * 6 + CAVE_SEGS * 6, sizeof(vertex));
+    for (int k = 0; k + 1 < c->npath; k++) {
+        for (int j = 0; j < CAVE_SEGS; j++) {
+            int j1 = (j + 1) % CAVE_SEGS;
+            v3 a = ring_point(c, t1, t2, k, j, b->seed), bb = ring_point(c, t1, t2, k, j1, b->seed);
+            v3 cc = ring_point(c, t1, t2, k + 1, j, b->seed), d = ring_point(c, t1, t2, k + 1, j1, b->seed);
+            /* a point outside the wall, so the normal points into the tunnel */
+            v3 out = v3_add(v3_scale(v3_add(a, d), 0.5f), v3_scale(v3_sub(a, c->path[k]), 2.0f));
+            uint32_t col = ((k + j) & 1) ? ROCK_A : ROCK_B;
+            emit_tri(&m, a, bb, d, out, col);
+            emit_tri(&m, a, d, cc, out, col);
+        }
+    }
+    /* lip: a cone flaring up and out from the top of the shaft that hides the ragged edge of the
+       hole in the terrain, facing the inside */
+    {
+        v3 e = c->entrance, top = c->path[0];
+        float r0 = c->radius[0], r1 = r0 * 1.5f;
+        v3 a1 = t1[0], a2 = t2[0];
+        for (int j = 0; j < CAVE_SEGS; j++) {
+            float x0 = 6.2831853f * j / CAVE_SEGS, x1 = 6.2831853f * (j + 1) / CAVE_SEGS;
+            v3 d0 = v3_add(v3_scale(a1, cosf(x0)), v3_scale(a2, sinf(x0))), d1 = v3_add(v3_scale(a1, cosf(x1)), v3_scale(a2, sinf(x1)));
+            v3 i0 = v3_add(top, v3_scale(d0, r0)), i1 = v3_add(top, v3_scale(d1, r0));
+            v3 o0 = v3_add(v3_add(top, v3_scale(e, 1.8f)), v3_scale(d0, r1)), o1 = v3_add(v3_add(top, v3_scale(e, 1.8f)), v3_scale(d1, r1));
+            v3 outside = v3_add(v3_scale(v3_add(i0, o1), 0.5f), v3_scale(d0, 4.0f));
+            emit_tri(&m, i0, o0, o1, outside, ROCK_B);
+            emit_tri(&m, i0, o1, i1, outside, ROCK_B);
+        }
+    }
+    return m;
+}
+
+mesh mesh_cave_cavern(const world *w, int bi) {
+    const cave *c = &w->b[bi].cave;
+    mesh m = { 0, 0, 0, 0 };
+    if (!c->enabled) return m;
+    const int rings = 10, segs = 16;
+    m.v = calloc(rings * segs * 6, sizeof(vertex));
+    v3 entry = v3_norm(c->path[c->npath - 1]);
+    float open = asinf(c->tube_r / c->core_r) * 1.3f;   /* leave a hole where the tunnel comes in */
+    for (int i = 0; i < rings; i++) {
+        for (int j = 0; j < segs; j++) {
+            v3 a = v3_scale(sphere_pt(i, rings, j, segs), c->core_r);
+            v3 b = v3_scale(sphere_pt(i + 1, rings, j, segs), c->core_r);
+            v3 cc = v3_scale(sphere_pt(i + 1, rings, j + 1, segs), c->core_r);
+            v3 d = v3_scale(sphere_pt(i, rings, j + 1, segs), c->core_r);
+            v3 centre = v3_norm(v3_add(v3_add(a, b), v3_add(cc, d)));
+            if (cave_angle(centre, entry) < open) continue;
+            v3 out = v3_scale(centre, c->core_r * 2.0f);
+            uint32_t col = ((i + j) & 1) ? 0x3E3A4CFF : 0x322E40FF;
+            if (i < rings - 1) emit_tri(&m, a, cc, b, out, col);
+            if (i > 0) emit_tri(&m, a, d, cc, out, col);
+        }
+    }
+    return m;
+}
+
+mesh mesh_cave_crystals(const world *w, int bi) {
+    const body *b = &w->b[bi];
+    const cave *c = &b->cave;
+    mesh m = { 0, 0, 0, 0 };
+    if (!c->enabled) return m;
+    v3 u[CAVE_PATH_MAX], t1[CAVE_PATH_MAX], t2[CAVE_PATH_MAX];
+    tube_frames(c, u, t1, t2);
+    const int core_gems = 14;
+    m.v = calloc((c->npath + core_gems) * 24, sizeof(vertex));
+    /* one crystal on the wall at every bend past the shaft */
+    for (int k = 2; k + 1 < c->npath; k++) {
+        float a = 6.2831853f * noise_hashf(k, 1, 8, b->seed);
+        v3 n = v3_add(v3_scale(t1[k], cosf(a)), v3_scale(t2[k], sinf(a)));   /* outward from the axis */
+        v3 p = v3_add(c->path[k], v3_scale(n, c->tube_r * 0.85f));
+        v3 in = v3_scale(n, -1.0f), r = v3_norm(v3_cross(in, u[k])), f = v3_cross(r, in);
+        emit_octa(&m, p, r, in, f, 0.3f, 0.6f, 0.3f, (k & 1) ? CRYSTAL_A : CRYSTAL_B);
+    }
+    /* a scatter of bigger ones around the cavern wall */
+    v3 entry = v3_norm(c->path[c->npath - 1]);
+    for (int g = 0; g < core_gems; g++) {
+        v3 d = v3_norm(v3_(noise_hashf(g, 2, 8, b->seed) * 2 - 1, noise_hashf(g, 3, 8, b->seed) * 2 - 1, noise_hashf(g, 4, 8, b->seed) * 2 - 1));
+        if (cave_angle(d, entry) < 0.6f) d = v3_scale(d, -1.0f);
+        v3 p = v3_scale(d, c->core_r * 0.92f);
+        v3 in = v3_scale(d, -1.0f), r = v3_any_perp(in), f = v3_cross(r, in);
+        float s = 0.6f + noise_hashf(g, 5, 8, b->seed) * 0.8f;
+        emit_octa(&m, p, r, in, f, s * 0.6f, s * 1.3f, s * 0.6f, (g & 1) ? CRYSTAL_A : CRYSTAL_B);
+    }
     return m;
 }
 

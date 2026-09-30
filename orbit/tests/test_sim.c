@@ -66,12 +66,14 @@ int main(void) {
             float rb = w.b[b2->parent].orbit_r - b2->orbit_r - b2->radius - b2->amp;
             CHECK(rb - ra >= 15.0f, "neighbouring moon paths stay apart when the planets line up");
         }
-        /* a planet's frame accelerates with the sun's pull; a moon's adds its planet's */
+        /* a body's frame accelerates with everything else's pull at its own centre, so a
+           particle at the centre feels nothing: only tides remain */
         v3 fa = world_frame_accel(&w, BODY_VERDANT);
-        CHECK(v3_len(v3_sub(fa, world_gravity_from(&w, BODY_SUN, w.b[BODY_VERDANT].pos))) < 1e-4f, "planet frame acceleration is the sun's pull");
+        v3 felt = v3_sub(v3_sub(world_gravity_at(&w, w.b[BODY_VERDANT].pos), world_gravity_from(&w, BODY_VERDANT, w.b[BODY_VERDANT].pos)), fa);
+        CHECK(v3_len(felt) < 1e-4f, "at a planet's centre the frame cancels every other pull");
         v3 fm = world_frame_accel(&w, BODY_FERN);
-        v3 want = v3_add(world_gravity_from(&w, BODY_VERDANT, w.b[BODY_FERN].pos), world_gravity_from(&w, BODY_SUN, w.b[BODY_VERDANT].pos));
-        CHECK(v3_len(v3_sub(fm, want)) < 1e-4f, "moon frame acceleration adds its planet's pull");
+        v3 felt_m = v3_sub(v3_sub(world_gravity_at(&w, w.b[BODY_FERN].pos), world_gravity_from(&w, BODY_FERN, w.b[BODY_FERN].pos)), fm);
+        CHECK(v3_len(felt_m) < 1e-4f, "at a moon's centre too (the sun's pull is taken at the moon, not its planet)");
     }
 
     /* gravity above a planet points at it and beats the sun there */

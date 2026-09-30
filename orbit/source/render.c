@@ -28,7 +28,8 @@ static C3D_LightLut lutPhong;
 static gpu_mesh bodies[BODY_COUNT], props[BODY_COUNT][8], grass[BODY_COUNT][GRASS_CELLS];
 static gpu_mesh water[BODY_COUNT], shell_in[BODY_COUNT], clouds[BODY_COUNT];
 static gpu_mesh astro_body, astro_arm, astro_leg, flame_outer, flame_inner, stars;
-static gpu_mesh rod_seg, bobber_top, bobber_bot, fish_mesh;
+static gpu_mesh rod_seg, bobber_top, bobber_bot, fish_mesh, gem;
+static gpu_mesh cave_tunnel[BODY_COUNT], cave_cavern[BODY_COUNT], cave_crystals[BODY_COUNT];
 #define LINE_SEGS 12
 #define LINE_VERTS (LINE_SEGS * 6)
 #define SPLASH_VERTS (8 * 6)
@@ -49,6 +50,10 @@ static const C3D_Material mat_water = {
 };
 static const C3D_Material mat_glow = {
     { 0, 0, 0 }, { 0, 0, 0 }, { 0, 0, 0 }, { 0, 0, 0 }, { 1.0f, 1.0f, 1.0f },
+};
+/* cave rock: mostly ambient, so the sun's direction barely shows through the walls */
+static const C3D_Material mat_cave = {
+    { 0.55f, 0.55f, 0.62f }, { 0.35f, 0.35f, 0.35f }, { 0.05f, 0.05f, 0.05f }, { 0, 0, 0 }, { 0, 0, 0 },
 };
 
 static gpu_mesh upload(mesh m) {
@@ -130,6 +135,12 @@ void render_init(const world *w) {
     bobber_top = upload(mesh_sphere(0.12f, 6, 8, 0xE03030FF));
     bobber_bot = upload(mesh_sphere(0.11f, 6, 8, 0xF0F0F0FF));
     fish_mesh = upload(mesh_fish());
+    gem = upload(mesh_gem(1.0f, 0xD0FF70FF));   /* unit, scaled per firefly */
+    for (int i = 0; i < BODY_COUNT; i++) {
+        cave_tunnel[i] = upload(mesh_cave_tunnel(w, i));
+        cave_cavern[i] = upload(mesh_cave_cavern(w, i));
+        cave_crystals[i] = upload(mesh_cave_crystals(w, i));
+    }
     line_vbo = linearAlloc(LINE_VERTS * sizeof(vertex));
     splash_vbo = linearAlloc(SPLASH_VERTS * sizeof(vertex));
 }
@@ -353,6 +364,24 @@ static void draw_school(const school *s, const world *w) {
     }
 }
 
+/* Fireflies: additive glowing specks; call in the blended pass. */
+static void draw_fireflies(const fireflies *ff, const world *w) {
+    if (ff->body < 0) return;
+    C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ONE, GPU_ONE, GPU_ONE);
+    for (int i = 0; i < FIREFLY_N; i++) {
+        v3 pos;
+        float k = fireflies_get(ff, w, i, &pos);
+        if (k < 0.03f) continue;
+        C3D_Material m = mat_glow;
+        m.emission[0] = 0.5f + 0.5f * k; m.emission[1] = 0.6f + 0.4f * k; m.emission[2] = 0.3f * k;
+        C3D_Mtx mm; mtx_translate(&mm, pos);
+        float s = 0.08f + 0.12f * k;
+        Mtx_Scale(&mm, s, s, s);
+        draw(&gem, &mm, &m);
+    }
+    C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA);
+}
+
 static v3 bezier(v3 a, v3 c, v3 b, float t) {
     float u = 1 - t;
     return v3_add(v3_add(v3_scale(a, u * u), v3_scale(c, 2 * u * t)), v3_scale(b, t * t));
@@ -428,7 +457,7 @@ static float sky_color(const world *w, const player *p, const camera *c, u32 *ou
     return k;
 }
 
-void render_scene(const world *w, const player *p, const camera *c, const fishing *f, const school *s, float time) {
+void render_scene(const world *w, const player *p, const camera *c, const fishing *f, const school *s, const fireflies *ff, float time) {
     u32 sky;
     float skyk = sky_color(w, p, c, &sky);
     C3D_RenderTargetClear(top, C3D_CLEAR_ALL, sky, 0);
@@ -470,6 +499,11 @@ void render_scene(const world *w, const player *p, const camera *c, const fishin
            would be smaller than a pixel anyway, and skip the octants facing away from us */
         v3 to_cam = v3_sub(c->pos, b->pos);
         float gap = v3_len(to_cam) - b->radius;
+        if (b->cave.enabled && gap < 60.0f) {   /* the cave: walls face inward, crystals glow */
+            draw(&cave_tunnel[i], &model, &mat_cave);
+            draw(&cave_cavern[i], &model, &mat_cave);
+            draw(&cave_crystals[i], &model, &mat_glow);
+        }
         if (gap < 700.0f) {
             v3 d = v3_norm(to_cam);
             for (int o = 0; o < 8; o++) {
@@ -505,6 +539,7 @@ void render_scene(const world *w, const player *p, const camera *c, const fishin
         draw_ex(&water[i], &model, &mat_water, has_water_tex ? &water_tex : NULL, uMV);
     }
     draw_fishing_soft(f, c);
+    draw_fireflies(ff, w);
 
     /* clouds: lit, textured alpha, drifting */
     for (int i = 0; i < BODY_COUNT; i++) {
@@ -586,7 +621,8 @@ void render_fini(void) {
     if (has_cloud_tex) C3D_TexDelete(&cloud_tex);
     gpu_free(&astro_body); gpu_free(&astro_arm); gpu_free(&astro_leg);
     gpu_free(&flame_outer); gpu_free(&flame_inner); gpu_free(&stars);
-    gpu_free(&rod_seg); gpu_free(&bobber_top); gpu_free(&bobber_bot); gpu_free(&fish_mesh);
+    gpu_free(&rod_seg); gpu_free(&bobber_top); gpu_free(&bobber_bot); gpu_free(&fish_mesh); gpu_free(&gem);
+    for (int i = 0; i < BODY_COUNT; i++) { gpu_free(&cave_tunnel[i]); gpu_free(&cave_cavern[i]); gpu_free(&cave_crystals[i]); }
     linearFree(line_vbo); linearFree(splash_vbo);
     shaderProgramFree(&program);
     shaderProgramFree(&program_atmo);

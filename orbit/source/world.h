@@ -32,6 +32,20 @@ typedef struct {
 
 typedef struct { int trees, rocks, shards; uint32_t rock_a, rock_b; float rock_scale; } prop_plan;
 
+/* A cave on a moon: a pit in the terrain with a hole at the bottom, a vertical shaft, a helical
+   tunnel winding down, and a hollow zero-g core cavern. Points are relative to the body's centre. */
+#define CAVE_PATH_MAX 28
+typedef struct {
+    int enabled;
+    v3 entrance;         /* unit direction of the mouth */
+    float pit_ang, pit_depth;   /* bowl in the terrain around the mouth: angular radius, depth */
+    float hole_ang;      /* angular radius of the hole cut in the terrain mesh */
+    float tube_r;        /* tunnel radius */
+    v3 path[CAVE_PATH_MAX]; int npath;   /* tunnel axis from the shaft top down into the core */
+    float radius[CAVE_PATH_MAX];         /* tunnel radius at each point: a wide shaft, then tube_r */
+    float core_r;        /* cavern radius; gravity is zero inside it */
+} cave;
+
 typedef struct {
     const char *name;
     float radius;
@@ -53,6 +67,7 @@ typedef struct {
     float atmo_h;        /* atmosphere thickness above the surface */
     float *grid;         /* (rings + 1) * segs heights, filled by world_init */
     prop *props; int nprops;   /* placed by world_init */
+    cave cave;                 /* moons only */
     v3 pos, prev, vel;   /* world position now, last frame, and velocity */
 } body;
 
@@ -70,8 +85,8 @@ v3 world_gravity_at(const world *w, v3 p);
 /* Index of the body whose frame the player should use at p: the innermost body whose sphere
    of influence contains p (the sun when none does). */
 int world_dominant(const world *w, v3 p);
-/* Acceleration of body i's frame: the pull of everything it orbits, at the centres they orbit
-   from. Subtract it from the gravity felt near i so a circular orbit does not read as a push. */
+/* Acceleration of body i's frame: the pull of every other body at i's centre. Subtract it from
+   the gravity felt near i so the orbit does not read as a push; only the tides remain. */
 v3 world_frame_accel(const world *w, int i);
 
 /* Terrain. dir is a unit vector from the body's centre. */
@@ -89,5 +104,7 @@ uint32_t world_color(const world *w, int i, v3 dir, float raw_h);
 prop_plan world_prop_plan(terrain_kind t);
 /* World position of a prop's base (a little below the surface so it never floats). */
 v3 world_prop_base(const world *w, int i, const prop *q);
+/* True when dir falls inside body i's cave mouth, where the terrain mesh has a hole. */
+int world_in_hole(const world *w, int i, v3 dir);
 
 #endif

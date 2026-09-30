@@ -6,10 +6,11 @@
 #include "camera.h"
 #include "fishing.h"
 #include "school.h"
+#include "fireflies.h"
 
 void render_init(const world *w);
 /* Draws the whole 3D scene to the top screen. Call between C3D_FrameBegin / C3D_FrameEnd. */
-void render_scene(const world *w, const player *p, const camera *c, const fishing *f, const school *s, float time);
+void render_scene(const world *w, const player *p, const camera *c, const fishing *f, const school *s, const fireflies *ff, float time);
 /* After render_scene: the sun's top-screen position and flare strength 0..1 (0 if hidden). */
 float render_sun_screen(float *sx, float *sy);
 /* Projects a world point to top-screen pixels using the last frame's camera; 0 if behind. */

@@ -1,4 +1,5 @@
 #include "player.h"
+#include "cave.h"
 
 #define BODY_TURN_RATE 6.0f   /* how fast the model turns onto its target orientation, 1/s */
 #define WALK_SPEED   8.0f
@@ -34,6 +35,7 @@ void player_spawn(player *p, const world *w, int bi) {
     p->grounded = 1;
     p->swimming = 0;
     p->in_water = 0;
+    p->in_cave = p->in_core = 0;
     p->thrusting = 0;
     p->jet_up = p->jet_down = p->jet_fwd = 0;
     p->jet_roll = 0;
@@ -164,14 +166,47 @@ void player_update(player *p, const world *w, const player_input *in, float dt) 
     p->pos = v3_add(p->pos, v3_scale(p->vel, dt));
     collide_props(p, w);
 
-    /* surface contact */
+    /* caves: inside one, the tunnel walls are the world; the floor under the feet is ground */
     int touching = 0;
-    for (int i = 0; i < BODY_COUNT; i++) {
+    p->in_cave = p->in_core = 0;
+    if (dom->cave.enabled) {
+        const cave *c = &dom->cave;
+        v3 rel = v3_sub(p->pos, dom->pos), n; float pen;
+        int where = cave_inside(c, rel, PLAYER_HALF_HEIGHT, &n, &pen);
+        if (where) {
+            p->in_cave = 1;
+            p->in_core = v3_len(rel) < c->core_r;
+            p->up = v3_norm(rel);
+            if (pen > 0) {
+                p->pos = v3_add(p->pos, v3_scale(n, pen));
+                float into = v3_dot(p->vel, n);
+                if (into < 0) p->vel = v3_sub(p->vel, v3_scale(n, into));
+                if (where == 1 && v3_dot(n, p->up) > 0.5f) touching = 1;   /* a wall under the feet is ground */
+            }
+            if (where == 1) {
+                /* keep the feet on the tunnel floor: settle onto it when standing, snap down when
+                   walking off a bump; the wall is the ground whenever it is under the feet */
+                float s = cave_floor_below(c, v3_sub(p->pos, dom->pos), p->up, PLAYER_HALF_HEIGHT + GROUND_SNAP);
+                int snap = p->grounded && !jumped;
+                if (s >= 0 && (s <= PLAYER_HALF_HEIGHT + 0.02f || snap)) {
+                    p->pos = v3_sub(p->pos, v3_scale(p->up, s - PLAYER_HALF_HEIGHT));
+                    float radial = v3_dot(p->vel, p->up);
+                    if (radial < 0 || snap) p->vel = v3_sub(p->vel, v3_scale(p->up, radial));
+                    touching = 1;
+                }
+            }
+            p->swimming = 0;
+        }
+    }
+
+    /* surface contact */
+    for (int i = 0; i < BODY_COUNT && !p->in_cave; i++) {
         const body *b = &w->b[i];
         v3 d = v3_sub(p->pos, b->pos);
         float dist = v3_len(d);
         if (dist > b->radius + b->amp + PLAYER_HALF_HEIGHT + GROUND_SNAP) continue;   /* nowhere near */
         v3 n = v3_norm(d);
+        if (world_in_hole(w, i, n)) continue;   /* over a cave mouth: nothing to stand on */
         float floor = world_surface(w, i, n) + PLAYER_HALF_HEIGHT;   /* terrain under our feet */
         int snap = (p->grounded && !jumped && i == p->dom && dist < floor + GROUND_SNAP);
         if (dist >= floor && !snap) continue;

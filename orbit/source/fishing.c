@@ -397,7 +397,7 @@ void fishing_update(fishing *f, const world *w, const player *p, const fishing_i
         float sea_r = world_sea_radius(w, p->dom);
         if (sea_r > 0 && dist < sea_r) {
             f->splash_pos = on_sea(w, p, f->bobber); f->splash_t = 0;
-            f->anchor = f->splash_pos;
+            f->anchor = f->bobber = f->splash_pos;
             f->bob_off = 0;
             f->wander = f->wander_target = v3_(0, 0, 0);
             f->bobber_vel = v3_(0, 0, 0);
