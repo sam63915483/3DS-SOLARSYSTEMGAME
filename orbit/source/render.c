@@ -105,10 +105,10 @@ void render_init(const world *w) {
         shell_in[i] = shell_out[i] = clouds[i] = none;
         if (b->atmo) {
             /* two soft layers: a dense low one and a faint high one */
-            shell_in[i] = upload(mesh_sphere(b->radius + b->atmo_h * 0.35f, 24, 36, (b->atmo & 0xFFFFFF00u) | 0xC0));
-            shell_out[i] = upload(mesh_sphere(b->radius + b->atmo_h * 1.0f, 24, 36, (b->atmo & 0xFFFFFF00u) | 0x70));
+            shell_in[i] = upload(mesh_sphere(b->radius + b->atmo_h * 0.55f, 24, 36, (b->atmo & 0xFFFFFF00u) | 0xC0));
+            shell_out[i] = upload(mesh_sphere(b->radius + b->atmo_h * 1.3f, 24, 36, (b->atmo & 0xFFFFFF00u) | 0x48));
             if (b->terrain != TERRAIN_EMBER)
-                clouds[i] = upload(mesh_sphere_uv(b->radius + b->atmo_h * 0.45f, 28, 42, 0xFFFFFFD8u, 2.0f));
+                clouds[i] = upload(mesh_sphere_uv(b->radius + b->atmo_h * 0.68f, 28, 42, 0xFFFFFFD8u, 2.0f));
         }
     }
     has_water_tex = texture_make_detail(&water_tex, DETAIL_WATER, 77u);
@@ -404,9 +404,9 @@ void render_scene(const world *w, const player *p, const camera *c, float time) 
         mtx_translate(&model, b->pos);
         float cam_r = v3_len(v3_sub(c->pos, b->pos));
         const gpu_mesh *layers[2] = { &shell_in[i], &shell_out[i] };
-        const float layer_r[2] = { b->radius + b->atmo_h * 0.35f, b->radius + b->atmo_h * 1.0f };
+        const float layer_r[2] = { b->radius + b->atmo_h * 0.55f, b->radius + b->atmo_h * 1.3f };
         for (int l = 0; l < 2; l++) {
-            float fade = clamp01(fabsf(cam_r - layer_r[l]) / (b->atmo_h * 0.45f));
+            float fade = clamp01(fabsf(cam_r - layer_r[l]) / (b->atmo_h * 0.6f));
             C3D_FVUnifSet(GPU_VERTEX_SHADER, aParams, fade, 0, 0, 0);
             draw_ex(layers[l], &model, NULL, NULL, aMV);
         }
