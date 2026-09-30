@@ -7,6 +7,8 @@
 #define LOOK_PITCH   2.0f
 #define GROUND_PITCH_RATE 1.6f  /* d-pad on the ground, rad/s */
 #define GROUND_PITCH_MAX  1.2f  /* about 69 degrees */
+#define LEVEL_TIME        0.6f  /* after takeoff the view eases back to level for this long */
+#define LEVEL_RATE        9.0f
 
 static void orthonormalize(camera *c) {
     c->view = v3_norm(c->view);
@@ -62,6 +64,7 @@ void camera_init(camera *c, const player *p) {
     c->fp = 0;
     c->gyro = 0;
     c->was_grounded = player_on_foot(p);
+    c->level_t = 0;
     c->pos = v3_add(v3_add(p->pos, v3_scale(c->up, CAM_UP)), v3_scale(c->fwd, -CAM_BACK));
     c->target = p->pos;
 }
@@ -100,6 +103,18 @@ void camera_update(camera *c, const world *w, const player *p, const camera_inpu
         c->view_up = v3_lerp(c->view_up, tu, k);
         orthonormalize(c);
     } else {
+        if (c->was_grounded) c->level_t = LEVEL_TIME;   /* just took off */
+        if (c->level_t > 0) {
+            /* ease the look back to level so the body can stay upright through the jump;
+               the pull fades out as the pad takes over */
+            v3 tv = v3_tangent(c->view, c->up);
+            tv = v3_len(tv) < 1e-3f ? c->fwd : v3_norm(tv);
+            float k = ease(LEVEL_RATE * (c->level_t / LEVEL_TIME), dt);
+            c->view = v3_lerp(c->view, tv, k);
+            c->view_up = v3_lerp(c->view_up, c->up, k);
+            orthonormalize(c);
+            c->level_t -= dt;
+        }
         /* free flight: pitch around right, yaw around view up, roll around view */
         v3 right = v3_norm(v3_cross(c->view, c->view_up));
         float pitch = (in->look_y * LOOK_PITCH + in->gyro_pitch) * dt;

@@ -1,5 +1,6 @@
 #include "player.h"
 
+#define BODY_TURN_RATE 6.0f   /* how fast the model turns onto its target orientation, 1/s */
 #define WALK_SPEED   8.0f
 #define WADE_FACTOR  0.55f
 #define SWIM_SPEED   3.5f
@@ -37,6 +38,8 @@ void player_spawn(player *p, const world *w, int bi) {
     p->jet_roll = 0;
     p->brake_dir = v3_(0, 0, 0);
     p->facing = v3_(1, 0, 0);
+    p->body_up = p->up;
+    p->body_fwd = p->facing;
     p->move_dir = v3_(0, 0, 0);
     p->speed = 0;
     p->altitude = 0;
@@ -162,6 +165,20 @@ void player_update(player *p, const world *w, const player_input *in, float dt) 
 
     p->speed = v3_len(p->vel);
     if (player_on_foot(p)) p->anim += p->speed * 1.6f * dt;   /* walk / paddle cycle */
+
+    /* the body eases towards its target orientation rather than jumping to it */
+    {
+        v3 tu = p->up, tf = p->facing;
+        if (!player_on_foot(p)) {
+            if (v3_len(in->view_up) > 1e-4f) tu = v3_norm(in->view_up);
+            if (v3_len(in->view_forward) > 1e-4f) tf = v3_norm(in->view_forward);
+        }
+        float k = ease(BODY_TURN_RATE, dt);
+        v3 bu = v3_lerp(p->body_up, tu, k);
+        p->body_up = v3_len(bu) < 1e-3f ? tu : v3_norm(bu);
+        v3 bf = v3_tangent(v3_lerp(p->body_fwd, tf, k), p->body_up);
+        p->body_fwd = v3_len(bf) < 1e-3f ? v3_any_perp(p->body_up) : v3_norm(bf);
+    }
     p->altitude = v3_len(v3_sub(p->pos, dom->pos)) - world_surface(w, p->dom, p->up) - PLAYER_HALF_HEIGHT;
     if (p->grounded || fabsf(p->altitude) < 0.01f) p->altitude = 0;   /* no -0.0 flicker on the HUD */
 }

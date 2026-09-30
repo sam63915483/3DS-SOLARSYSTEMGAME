@@ -106,7 +106,7 @@ void render_init(const world *w) {
             /* one rim-glow shell */
             shell_in[i] = upload(mesh_sphere(b->radius + b->atmo_h * 0.7f, 24, 36, (b->atmo & 0xFFFFFF00u) | 0xE0));
             if (b->terrain != TERRAIN_EMBER)
-                clouds[i] = upload(mesh_sphere_uv(b->radius + b->atmo_h * 0.45f, 28, 42, 0xFFFFFFD8u, 2.0f));
+                clouds[i] = upload(mesh_sphere_uv(b->radius + b->atmo_h * 0.62f, 28, 42, 0xFFFFFFD8u, 2.0f));
         }
     }
     has_water_tex = texture_make_detail(&water_tex, DETAIL_WATER, 77u);
@@ -238,10 +238,10 @@ static void draw_limb(const gpu_mesh *g, const C3D_Mtx *base, v3 pivot, float sw
 static void draw_player(const player *p, const camera *c, float time) {
     if (c->fp > 0.6f) return;   /* first person: no model in the way */
 
-    /* the model uses the camera's smoothed basis so both roll together when "up" changes;
-       in flight it points along the view like a ship */
-    v3 up = player_on_foot(p) ? c->up : c->view_up;
-    v3 fwd = player_on_foot(p) ? v3_tangent(p->facing, up) : c->view;
+    /* the model uses the player's smoothed body basis: upright on the ground, easing onto the
+       view like a ship in flight, so takeoff and landing never snap it */
+    v3 up = p->body_up;
+    v3 fwd = v3_tangent(p->body_fwd, up);
     fwd = v3_len(fwd) < 1e-3f ? v3_any_perp(up) : v3_norm(fwd);
     v3 right = v3_cross(up, fwd);
     C3D_Mtx base;

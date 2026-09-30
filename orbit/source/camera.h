@@ -9,6 +9,7 @@ typedef struct {
     v3 pos, target;   /* result for the view matrix */
     float ground_pitch; /* d-pad look up/down on the ground, radians */
     int was_grounded;
+    float level_t;      /* seconds left of easing the view back to level after takeoff */
     int first_person;   /* requested view */
     float fp;           /* 0 = third person, 1 = inside the head, eased between */
     int gyro;           /* first-person gyro look (Majora's Mask style); only while first_person */

@@ -18,6 +18,8 @@ typedef struct {
     v3 brake_dir;    /* world-space direction the brake jet fires (along travel), zero if not braking */
     v3 up;           /* away from the dominant body */
     v3 facing;       /* unit tangent, where the model looks on the ground */
+    v3 body_up, body_fwd; /* smoothed model orientation: eases between upright/facing on the
+                             ground and the camera view in flight, so it never snaps */
     v3 move_dir;     /* world-space input direction from the last update (0 if none) */
     float speed;     /* |vel| for the HUD */
     float altitude;  /* height above the dominant body's surface */

@@ -139,10 +139,49 @@ int main(void) {
         for (int f = 0; f < 60; f++) { world_update(&w, DT); player_update(&p, &w, &in, DT); camera_update(&c, &w, &p, &cin, DT); }
     }
 
+    /* takeoff while looking at the ground: the body stays upright and the view eases level */
+    {
+        cin.look_y = -1.0f;
+        for (int f = 0; f < 90; f++) { world_update(&w, DT); player_update(&p, &w, &in, DT); camera_update(&c, &w, &p, &cin, DT); }
+        cin.look_y = 0;
+        CHECK(v3_dot(c.view, c.up) < -0.5f, "looking down at the ground before the jump");
+        CHECK(v3_dot(p.body_up, p.up) > 0.99f, "standing body is upright");
+        in.jump_pressed = 1; in.view_up = c.view_up; in.view_forward = c.view;
+        float worst = 0, min_upright = 1;
+        for (int f = 0; f < 60; f++) {
+            v3 bu0 = p.body_up;
+            world_update(&w, DT); player_update(&p, &w, &in, DT); camera_update(&c, &w, &p, &cin, DT);
+            in.jump_pressed = 0; in.view_up = c.view_up; in.view_forward = c.view;
+            float step = acosf(fminf(1.0f, v3_dot(bu0, p.body_up)));
+            if (step > worst) worst = step;
+            float upright = v3_dot(p.body_up, p.up);
+            if (upright < min_upright) min_upright = upright;
+        }
+        CHECK(!p.grounded, "airborne after the jump");
+        CHECK(worst < 0.15f, "the body never turns more than about 8 degrees in one frame at takeoff");
+        CHECK(min_upright > 0.8f, "the body stays close to upright through the takeoff");
+        CHECK(fabsf(v3_dot(c.view, c.up)) < 0.15f, "the view has eased back to level after takeoff");
+        CHECK(v3_dot(p.body_fwd, c.view) > 0.9f, "once level the body faces along the view");
+        /* the landing must be just as smooth */
+        worst = 0;
+        for (int f = 0; f < 240 && !p.grounded; f++) {
+            v3 bu0 = p.body_up;
+            world_update(&w, DT); player_update(&p, &w, &in, DT); camera_update(&c, &w, &p, &cin, DT);
+            in.view_up = c.view_up; in.view_forward = c.view;
+            float step = acosf(fminf(1.0f, v3_dot(bu0, p.body_up)));
+            if (step > worst) worst = step;
+        }
+        CHECK(p.grounded, "back on the ground after the hop");
+        CHECK(worst < 0.15f, "the body never snaps on landing either");
+        for (int f = 0; f < 60; f++) { world_update(&w, DT); player_update(&p, &w, &in, DT); camera_update(&c, &w, &p, &cin, DT); }
+    }
+
     /* flight: the pad pitches the view without limit, A boosts along it */
     in.jump_pressed = 1; in.thrust_up = 1; in.view_up = p.up;   /* constant thrust direction for the loop tests */
     world_update(&w, DT); player_update(&p, &w, &in, DT);
     in.jump_pressed = 0;
+    /* let the takeoff levelling finish before testing free look */
+    for (int f = 0; f < 45; f++) { world_update(&w, DT); player_update(&p, &w, &in, DT); camera_update(&c, &w, &p, &cin, DT); }
     cin.turn = 0; cin.look_y = 1.0f;
     v3 start_view = c.view;
     int looked_back = 0;
