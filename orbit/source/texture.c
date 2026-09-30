@@ -29,10 +29,19 @@ static float pfbm(float u, float v, int cells, int octaves, uint32_t seed) {
 
 static float clamp01(float x) { return x < 0 ? 0 : (x > 1 ? 1 : x); }
 
-/* Level-0 texel colour as floats 0..1 (r, g, b) for the given kind. */
-static void texel(detail_kind kind, float u, float v, int px, int py, uint32_t seed, float *r, float *g, float *b) {
+/* Level-0 texel colour as floats 0..1 (r, g, b, a) for the given kind. */
+static void texel(detail_kind kind, float u, float v, int px, int py, uint32_t seed, float *r, float *g, float *b, float *a) {
     float br = 1.0f, tr = 1.0f, tg = 1.0f, tb = 1.0f;
+    *a = 1.0f;
     switch (kind) {
+    case DETAIL_CLOUDS: {
+        /* soft cloud shapes in the alpha, white colour */
+        float n = pfbm(u, v, 3, 4, seed);
+        float t = (n - 0.50f) / 0.16f;
+        *a = clamp01(t) * clamp01(t) * (3 - 2 * clamp01(t));
+        br = 1.0f;
+        break;
+    }
     case DETAIL_GRASS: {
         float base = pfbm(u, v, 4, 3, seed);
         float fine = pfbm(u, v, 16, 2, seed + 7u);
@@ -91,20 +100,22 @@ detail_kind texture_kind_for(terrain_kind t) {
 
 bool texture_make_detail(C3D_Tex *tex, detail_kind kind, uint32_t seed) {
     if (!C3D_TexInitMipmap(tex, TEX_SIZE, TEX_SIZE, GPU_RGBA8)) return false;
-    /* level 0 as floats */
-    float *img = malloc(sizeof(float) * TEX_SIZE * TEX_SIZE * 3);
+    /* level 0 as floats, four channels */
+    float *img = malloc(sizeof(float) * TEX_SIZE * TEX_SIZE * 4);
     for (int y = 0; y < TEX_SIZE; y++)
-        for (int x = 0; x < TEX_SIZE; x++)
-            texel(kind, (x + 0.5f) / TEX_SIZE, (y + 0.5f) / TEX_SIZE, x, y, seed,
-                  &img[(y * TEX_SIZE + x) * 3], &img[(y * TEX_SIZE + x) * 3 + 1], &img[(y * TEX_SIZE + x) * 3 + 2]);
+        for (int x = 0; x < TEX_SIZE; x++) {
+            float *c = &img[(y * TEX_SIZE + x) * 4];
+            texel(kind, (x + 0.5f) / TEX_SIZE, (y + 0.5f) / TEX_SIZE, x, y, seed, &c[0], &c[1], &c[2], &c[3]);
+        }
     int w = TEX_SIZE;
     for (int level = 0; level <= tex->maxLevel; level++) {
         u32 *px = C3D_TexGetImagePtr(tex, tex->data, level, NULL);
         for (int y = 0; y < w; y++) {
             for (int x = 0; x < w; x++) {
-                const float *c = &img[(y * w + x) * 3];
-                u32 r = (u32)(c[0] * 255.0f + 0.5f), g = (u32)(c[1] * 255.0f + 0.5f), b = (u32)(c[2] * 255.0f + 0.5f);
-                put_pixel(px, w, x, y, (r << 24) | (g << 16) | (b << 8) | 0xFF);
+                const float *c = &img[(y * w + x) * 4];
+                u32 r = (u32)(c[0] * 255.0f + 0.5f), g = (u32)(c[1] * 255.0f + 0.5f);
+                u32 b = (u32)(c[2] * 255.0f + 0.5f), a = (u32)(c[3] * 255.0f + 0.5f);
+                put_pixel(px, w, x, y, (r << 24) | (g << 16) | (b << 8) | a);
             }
         }
         /* box-filter down for the next level */
@@ -112,10 +123,10 @@ bool texture_make_detail(C3D_Tex *tex, detail_kind kind, uint32_t seed) {
         if (hw < 8) break;
         for (int y = 0; y < hw; y++) {
             for (int x = 0; x < hw; x++) {
-                for (int k = 0; k < 3; k++) {
-                    float s = img[((2 * y) * w + 2 * x) * 3 + k] + img[((2 * y) * w + 2 * x + 1) * 3 + k]
-                            + img[((2 * y + 1) * w + 2 * x) * 3 + k] + img[((2 * y + 1) * w + 2 * x + 1) * 3 + k];
-                    img[(y * hw + x) * 3 + k] = s * 0.25f;
+                for (int k = 0; k < 4; k++) {
+                    float s = img[((2 * y) * w + 2 * x) * 4 + k] + img[((2 * y) * w + 2 * x + 1) * 4 + k]
+                            + img[((2 * y + 1) * w + 2 * x) * 4 + k] + img[((2 * y + 1) * w + 2 * x + 1) * 4 + k];
+                    img[(y * hw + x) * 4 + k] = s * 0.25f;
                 }
             }
         }

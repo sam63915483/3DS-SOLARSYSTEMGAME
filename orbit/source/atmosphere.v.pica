@@ -1,7 +1,7 @@
 ; Atmosphere shell shader: rim glow. Alpha = colour alpha * (1 - |n.v|)^2 * daylight,
 ; where n is the view-space normal, v the direction to the camera, daylight = max(0, n.sun).
 
-.fvec projection[4], modelView[4], sundir
+.fvec projection[4], modelView[4], sundir, params   ; params.x = alpha scale
 
 .constf myconst(0.0, 1.0, -1.0, 0.5)
 .constf inv255(0.00392156862745, 3.0, 0.15, 0.0)
@@ -64,6 +64,7 @@
 	mul r9, inv255.xxxx, incol
 	mul r9.w, r9.w, r7.y
 	mul r9.w, r9.w, r8.x
+	mul r9.w, params.x, r9.w
 	mov outclr, r9
 	end
 .end

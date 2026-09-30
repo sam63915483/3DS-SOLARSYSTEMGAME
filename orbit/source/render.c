@@ -20,16 +20,17 @@ static C3D_RenderTarget *top;
 static DVLB_s *dvlb, *dvlb_atmo;
 static shaderProgram_s program, program_atmo;
 static int uProj, uMV, aProj, aMV, aSun;
-static C3D_Mtx proj, view;
+static C3D_Mtx proj, view, proj2;   /* proj2: untilted, for screen-space projection */
 static C3D_LightEnv lightEnv;
 static C3D_Light light;
 static C3D_LightLut lutPhong;
 
 static gpu_mesh bodies[BODY_COUNT], props[BODY_COUNT][8], grass[BODY_COUNT][GRASS_CELLS];
-static gpu_mesh water[BODY_COUNT], shells[BODY_COUNT];
+static gpu_mesh water[BODY_COUNT], shell_in[BODY_COUNT], shell_out[BODY_COUNT], clouds[BODY_COUNT];
 static gpu_mesh astro_body, astro_arm, astro_leg, flame_outer, flame_inner, stars;
-static C3D_Tex detail[BODY_COUNT], water_tex;
-static int has_detail[BODY_COUNT], has_water_tex;
+static C3D_Tex detail[BODY_COUNT], water_tex, cloud_tex;
+static int has_detail[BODY_COUNT], has_water_tex, has_cloud_tex, aParams;
+static float sun_sx, sun_sy, sun_k;
 
 static const C3D_Material mat_lit = {
     { 0.30f, 0.30f, 0.36f },  /* ambient */
@@ -83,6 +84,7 @@ void render_init(const world *w) {
     aProj = shaderInstanceGetUniformLocation(program_atmo.vertexShader, "projection");
     aMV = shaderInstanceGetUniformLocation(program_atmo.vertexShader, "modelView");
     aSun = shaderInstanceGetUniformLocation(program_atmo.vertexShader, "sundir");
+    aParams = shaderInstanceGetUniformLocation(program_atmo.vertexShader, "params");
 
     C3D_LightEnvInit(&lightEnv);
     C3D_LightEnvMaterial(&lightEnv, &mat_lit);
@@ -99,10 +101,18 @@ void render_init(const world *w) {
         for (int o = 0; o < 8; o++) props[i][o] = upload(mesh_props(w, i, o));
         for (int g = 0; g < GRASS_CELLS; g++) grass[i][g] = upload(mesh_grass(w, i, g));
         has_detail[i] = !b->emissive && texture_make_detail(&detail[i], texture_kind_for(b->terrain), b->seed);
-        if (b->atmo) shells[i] = upload(mesh_sphere(b->radius + b->atmo_h * 0.7f, 24, 36, (b->atmo & 0xFFFFFF00u) | 0xE0));
-        else { gpu_mesh none = { 0, 0, 0, 0 }; shells[i] = none; }
+        gpu_mesh none = { 0, 0, 0, 0 };
+        shell_in[i] = shell_out[i] = clouds[i] = none;
+        if (b->atmo) {
+            /* two soft layers: a dense low one and a faint high one */
+            shell_in[i] = upload(mesh_sphere(b->radius + b->atmo_h * 0.35f, 24, 36, (b->atmo & 0xFFFFFF00u) | 0xC0));
+            shell_out[i] = upload(mesh_sphere(b->radius + b->atmo_h * 1.0f, 24, 36, (b->atmo & 0xFFFFFF00u) | 0x70));
+            if (b->terrain != TERRAIN_EMBER)
+                clouds[i] = upload(mesh_sphere_uv(b->radius + b->atmo_h * 0.45f, 28, 42, 0xFFFFFFD8u, 2.0f));
+        }
     }
     has_water_tex = texture_make_detail(&water_tex, DETAIL_WATER, 77u);
+    has_cloud_tex = texture_make_detail(&cloud_tex, DETAIL_CLOUDS, 91u);
 
     /* player: model +z is forward, +y is up, origin at the middle of the 1.8 tall body */
     astro_body = upload(mesh_astronaut(ASTRO_BODY));
@@ -125,8 +135,14 @@ static void set_texenv(int mode) {
         C3D_TexEnvSrc(env, C3D_RGB, GPU_PRIMARY_COLOR, 0, 0);
         C3D_TexEnvFunc(env, C3D_RGB, GPU_REPLACE);
     }
-    C3D_TexEnvSrc(env, C3D_Alpha, GPU_PRIMARY_COLOR, 0, 0);
-    C3D_TexEnvFunc(env, C3D_Alpha, GPU_REPLACE);
+    if (mode == 1) {
+        /* texture alpha * vertex alpha, so cloud textures can cut holes */
+        C3D_TexEnvSrc(env, C3D_Alpha, GPU_TEXTURE0, GPU_PRIMARY_COLOR, 0);
+        C3D_TexEnvFunc(env, C3D_Alpha, GPU_MODULATE);
+    } else {
+        C3D_TexEnvSrc(env, C3D_Alpha, GPU_PRIMARY_COLOR, 0, 0);
+        C3D_TexEnvFunc(env, C3D_Alpha, GPU_REPLACE);
+    }
     env = C3D_GetTexEnv(1);
     C3D_TexEnvInit(env);
     env = C3D_GetTexEnv(2);
@@ -314,11 +330,14 @@ void render_scene(const world *w, const player *p, const camera *c, float time) 
     C3D_LightPosition(&light, &lp);
 
     C3D_Mtx model;
-    /* stars follow the camera so they never get closer; daylight hides them */
-    if (skyk < 0.35f) {
+    /* stars follow the camera so they never get closer; they fade as the sky brightens */
+    float star_k = 1.0f - skyk * 1.8f;
+    if (star_k > 0.02f) {
+        C3D_Material mat_stars = mat_glow;
+        mat_stars.emission[0] = mat_stars.emission[1] = mat_stars.emission[2] = star_k > 1 ? 1 : star_k;
         mtx_translate(&model, c->pos);
         C3D_CullFace(GPU_CULL_NONE);
-        draw(&stars, &model, &mat_glow);
+        draw(&stars, &model, &mat_stars);
         C3D_CullFace(GPU_CULL_BACK_CCW);
     }
 
@@ -363,32 +382,91 @@ void render_scene(const world *w, const player *p, const camera *c, float time) 
         draw_ex(&water[i], &model, &mat_water, has_water_tex ? &water_tex : NULL, uMV);
     }
 
-    /* atmosphere shells: rim glow with their own shader, no lighting */
+    /* clouds: lit, textured alpha, drifting */
+    for (int i = 0; i < BODY_COUNT; i++) {
+        if (!clouds[i].count || !has_cloud_tex) continue;
+        mtx_translate(&model, w->b[i].pos);
+        Mtx_RotateY(&model, time * 0.006f, true);
+        draw_ex(&clouds[i], &model, &mat_lit, &cloud_tex, uMV);
+    }
+
+    /* atmosphere shells: rim glow with their own shader, no lighting. Each layer fades out
+       as the camera passes through it so it never reads as a hard bubble. */
     C3D_BindProgram(&program_atmo);
     C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, aProj, &proj);
     C3D_LightEnvBind(NULL);
     for (int i = 0; i < BODY_COUNT; i++) {
-        if (!shells[i].count) continue;
-        v3 sd = v3_norm(v3_sub(w->b[BODY_SUN].pos, w->b[i].pos));
+        const body *b = &w->b[i];
+        if (!shell_in[i].count) continue;
+        v3 sd = v3_norm(v3_sub(w->b[BODY_SUN].pos, b->pos));
         C3D_FVec sv = Mtx_MultiplyFVec4(&view, FVec4_New(sd.x, sd.y, sd.z, 0.0f));
         C3D_FVUnifSet(GPU_VERTEX_SHADER, aSun, sv.x, sv.y, sv.z, 0.0f);
-        mtx_translate(&model, w->b[i].pos);
-        draw_ex(&shells[i], &model, NULL, NULL, aMV);
+        mtx_translate(&model, b->pos);
+        float cam_r = v3_len(v3_sub(c->pos, b->pos));
+        const gpu_mesh *layers[2] = { &shell_in[i], &shell_out[i] };
+        const float layer_r[2] = { b->radius + b->atmo_h * 0.35f, b->radius + b->atmo_h * 1.0f };
+        for (int l = 0; l < 2; l++) {
+            float fade = clamp01(fabsf(cam_r - layer_r[l]) / (b->atmo_h * 0.45f));
+            C3D_FVUnifSet(GPU_VERTEX_SHADER, aParams, fade, 0, 0, 0);
+            draw_ex(layers[l], &model, NULL, NULL, aMV);
+        }
     }
     C3D_LightEnvBind(&lightEnv);
     C3D_BindProgram(&program);
     C3D_CullFace(GPU_CULL_BACK_CCW);
     C3D_DepthTest(true, GPU_GREATER, GPU_WRITE_ALL);
+
+    /* where the sun lands on the screen, for the lens flare (an untilted projection gives
+       ordinary screen axes) */
+    sun_k = 0;
+    Mtx_Persp(&proj2, C3D_AngleFromDegrees(55.0f), C3D_AspectRatioTop, 0.5f, 3.0f * STAR_RADIUS, false);
+    {
+        C3D_FVec vs = Mtx_MultiplyFVec4(&view, FVec4_New(sp.x, sp.y, sp.z, 1.0f));
+        C3D_FVec cs = Mtx_MultiplyFVec4(&proj2, vs);
+        if (cs.w > 1.0f) {
+            float nx = cs.x / cs.w, ny = cs.y / cs.w;
+            sun_sx = (nx * 0.5f + 0.5f) * 400.0f;
+            sun_sy = (1.0f - (ny * 0.5f + 0.5f)) * 240.0f;
+            float d = sqrtf(nx * nx + ny * ny);
+            sun_k = clamp01(1.35f - d);
+            /* hidden behind a planet? */
+            v3 ray = v3_sub(sp, c->pos);
+            float len = v3_len(ray);
+            v3 rd = v3_scale(ray, 1.0f / len);
+            for (int i = 1; i < BODY_COUNT && sun_k > 0; i++) {
+                v3 oc = v3_sub(w->b[i].pos, c->pos);
+                float t = v3_dot(oc, rd);
+                if (t < 0 || t > len) continue;
+                v3 closest = v3_sub(oc, v3_scale(rd, t));
+                float rr = w->b[i].radius + w->b[i].amp;
+                if (v3_dot(closest, closest) < rr * rr) sun_k = 0;
+            }
+            sun_k *= 1.0f - 0.5f * skyk;   /* a little softer in a bright sky */
+        }
+    }
 }
+
+float render_sun_screen(float *sx, float *sy) { *sx = sun_sx; *sy = sun_sy; return sun_k; }
+
+int render_project(v3 p, float *sx, float *sy) {
+    C3D_FVec vs = Mtx_MultiplyFVec4(&view, FVec4_New(p.x, p.y, p.z, 1.0f));
+    C3D_FVec cs = Mtx_MultiplyFVec4(&proj2, vs);
+    if (cs.w <= 0.5f) return 0;
+    *sx = (cs.x / cs.w * 0.5f + 0.5f) * 400.0f;
+    *sy = (1.0f - (cs.y / cs.w * 0.5f + 0.5f)) * 240.0f;
+    return 1;
+}
+C3D_RenderTarget *render_top_target(void) { return top; }
 
 void render_fini(void) {
     for (int i = 0; i < BODY_COUNT; i++) {
-        gpu_free(&bodies[i]); gpu_free(&water[i]); gpu_free(&shells[i]);
+        gpu_free(&bodies[i]); gpu_free(&water[i]); gpu_free(&shell_in[i]); gpu_free(&shell_out[i]); gpu_free(&clouds[i]);
         for (int o = 0; o < 8; o++) gpu_free(&props[i][o]);
         for (int g = 0; g < GRASS_CELLS; g++) gpu_free(&grass[i][g]);
         if (has_detail[i]) C3D_TexDelete(&detail[i]);
     }
     if (has_water_tex) C3D_TexDelete(&water_tex);
+    if (has_cloud_tex) C3D_TexDelete(&cloud_tex);
     gpu_free(&astro_body); gpu_free(&astro_arm); gpu_free(&astro_leg);
     gpu_free(&flame_outer); gpu_free(&flame_inner); gpu_free(&stars);
     shaderProgramFree(&program);

@@ -7,6 +7,8 @@
 #include "camera.h"
 #include "render.h"
 #include "hud.h"
+#include "flare.h"
+#include "target.h"
 
 static float pad_axis(int v) {
     float a = v / 156.0f;
@@ -25,6 +27,7 @@ int main(void) {
     world w; world_init(&w);
     player p; player_spawn(&p, &w, BODY_START);
     camera cam; camera_init(&cam, &p);
+    target_state tgt; target_init(&tgt);
     render_init(&w);
     hud_init();
 
@@ -77,11 +80,17 @@ int main(void) {
         world_update(&w, dt);
         player_update(&p, &w, &in, dt);
         camera_update(&cam, &w, &p, &cin, dt);
+        target_update(&tgt, &w, &p, &cam, (kDown & KEY_DUP) != 0);
 
         C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
         render_scene(&w, &p, &cam, w.t);
         C3D_LightEnvBind(NULL);
         C2D_Prepare();
+        {
+            float sx, sy, k = render_sun_screen(&sx, &sy);
+            flare_draw(render_top_target(), sx, sy, k);
+        }
+        target_draw(render_top_target(), &tgt, &w, &p, &cam);
         /* the 3D pass turns blending off; text and sprites need it back */
         C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA,
                        GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA);

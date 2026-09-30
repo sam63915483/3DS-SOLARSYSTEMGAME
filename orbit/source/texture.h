@@ -4,7 +4,7 @@
 #include <citro3d.h>
 #include "world.h"
 
-typedef enum { DETAIL_GRASS, DETAIL_ROCK, DETAIL_SNOW, DETAIL_WATER } detail_kind;
+typedef enum { DETAIL_GRASS, DETAIL_ROCK, DETAIL_SNOW, DETAIL_WATER, DETAIL_CLOUDS } detail_kind;
 
 /* Builds a 64x64 tiling RGBA8 texture with mipmaps into tex. Returns false on failure. */
 bool texture_make_detail(C3D_Tex *tex, detail_kind kind, uint32_t seed);

@@ -109,6 +109,11 @@ mesh mesh_sphere(float radius, int rings, int segs, uint32_t col) {
     return sphere_grid(rings, segs, 0, flat_radius, flat_color, &c, 0);
 }
 
+mesh mesh_sphere_uv(float radius, int rings, int segs, uint32_t col, float rep) {
+    sphere_ctx c = { 0, 0, col, radius };
+    return sphere_grid(rings, segs, rep, flat_radius, flat_color, &c, 0);
+}
+
 /* ---- props: small flat-shaded shapes appended to a growing triangle list ---- */
 
 /* Emits one triangle wound so its normal points away from `inside`. */
@@ -270,9 +275,11 @@ mesh mesh_props(const world *w, int bi, int octant) {
             v3 dir;
             if (!pick_dir(b, grove, k, kind, seed, &dir)) continue;
             float raw = world_height_raw(w, bi, dir);
-            float t = b->amp > 0 ? (raw - b->sea_level) / b->amp : 0;
-            if (kind == 0 && (t < 0.08f || t > 0.8f)) continue;   /* trees: not beach, not snow */
-            if (kind != 0 && t < 0.02f) continue;                  /* rocks and shards: dry land or ice */
+            /* fraction of the way from the lowest land (sea level or the deepest valley) to the peaks */
+            float lo = b->sea_level > -b->amp ? b->sea_level : -b->amp;
+            float lf = b->amp > 0 ? (raw - lo) / (b->amp - lo) : 0;
+            if (kind == 0 && (lf < 0.08f || lf > 0.75f)) continue;   /* trees: not beach, not peaks */
+            if (kind != 0 && lf < 0.02f) continue;                  /* rocks and shards: dry land or ice */
             placed++;                                              /* counts even if another octant draws it */
             if (octant_of(dir) != octant) continue;
 
@@ -360,8 +367,8 @@ mesh mesh_grass(const world *w, int bi, int cell) {
         if (l > 1 || l < 0.1f) continue;
         dir = v3_scale(dir, 1.0f / l);
         float raw = world_height_raw(w, bi, dir);
-        float t = (raw - b->sea_level) / b->amp;
-        if (t < 0.07f || t > 0.6f) continue;   /* grassland only */
+        float lf = (raw - b->sea_level) / (b->amp - b->sea_level);
+        if (lf < 0.07f || lf > 0.55f) continue;   /* grassland only */
         placed++;
         if (grass_cell_of(dir) != cell) continue;
         if (m.count + 15 > total / 3 * 15) break;

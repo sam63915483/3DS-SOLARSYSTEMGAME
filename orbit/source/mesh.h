@@ -25,6 +25,8 @@ mesh mesh_planet(const world *w, int i);
 mesh mesh_water(const world *w, int i, uint32_t col);
 /* Plain indexed sphere of the given radius, radial normals, one colour, no texcoords. */
 mesh mesh_sphere(float radius, int rings, int segs, uint32_t col);
+/* The same with texture coordinates tiling `rep` times pole to pole (2 * rep around). */
+mesh mesh_sphere_uv(float radius, int rings, int segs, uint32_t col, float rep);
 /* Trees, rocks and shards on body i whose direction falls in the given octant
    (0..7, bits: x negative, y negative, z negative), relative to the body's centre. */
 mesh mesh_props(const world *w, int i, int octant);

@@ -234,6 +234,9 @@ int main(void) {
         int gtotal = 0;
         for (int g = 0; g < GRASS_CELLS; g++) { mesh gm = mesh_grass(&w, BODY_START, g); gtotal += gm.count; mesh_free(&gm); }
         CHECK(gtotal > 20000 && gtotal % 15 == 0, "Verdant has thousands of five-blade grass tufts");
+        int etotal = 0;
+        for (int o = 0; o < 8; o++) { mesh em = mesh_props(&w, 1, o); etotal += em.count; mesh_free(&em); }
+        CHECK(etotal > 150 * 100 + 170 * 100, "Ember has trees as well as boulders");
     }
 
     /* swimming: drop into deep water, float, jump out */
