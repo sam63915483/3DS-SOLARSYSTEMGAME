@@ -96,12 +96,109 @@ mesh mesh_planet(const world *w, int i) {
     return sphere_grid(w->b[i].rings, w->b[i].segs, rep, planet_radius, planet_color, &c, 1);
 }
 
+/* Sea colour by how much water is under it: pale and clear in the shallows, dark and opaque
+   over the deeps. */
+static uint32_t water_color(const void *c, v3 dir, int ring, int seg) {
+    const sphere_ctx *s = c; (void)ring; (void)seg;
+    float depth = s->radius - world_surface(s->w, s->i, dir);
+    float t = depth / 14.0f;
+    if (t < 0) t = 0;
+    if (t > 1) t = 1;
+    float r = 0x48 + (0x0C - 0x48) * t, g = 0x9C + (0x30 - 0x9C) * t, b = 0xC8 + (0x88 - 0xC8) * t;
+    float a = 150 + (222 - 150) * t;
+    return ((uint32_t)r << 24) | ((uint32_t)g << 16) | ((uint32_t)b << 8) | (uint32_t)a;
+}
+
 mesh mesh_water(const world *w, int i, uint32_t col) {
     mesh empty = { 0, 0, 0, 0 };
     float r = world_sea_radius(w, i);
     if (r <= 0) return empty;
     sphere_ctx c = { w, i, col, r };
+    /* as fine as the terrain grid so the depth tint follows the coast */
+    return sphere_grid(w->b[i].rings, w->b[i].segs, r / 5.0f, flat_radius, water_color, &c, 0);
+}
+
+/* The moving ripple layer over the sea: a faint white textured sphere that the renderer turns. */
+mesh mesh_water_ripple(const world *w, int i) {
+    mesh empty = { 0, 0, 0, 0 };
+    float r = world_sea_radius(w, i);
+    if (r <= 0) return empty;
+    sphere_ctx c = { w, i, 0xFFFFFF3Cu, r + 0.02f };
     return sphere_grid(32, 48, r / 5.0f, flat_radius, flat_color, &c, 0);
+}
+
+/* Foam: a ribbon along the shoreline. Marching squares over the terrain grid against sea level
+   gives the contour; each crossing becomes a short quad that hugs the ground on the land side
+   and floats a hair above the sea on the water side. */
+mesh mesh_foam(const world *w, int i) {
+    mesh m = { 0, 0, 0, 0 };
+    const body *b = &w->b[i];
+    float sea = world_sea_radius(w, i);
+    if (sea <= 0) return m;
+    int cap = 0;
+    for (int pass = 0; pass < 2; pass++) {
+        if (pass == 1) { m.v = calloc((size_t)cap * 6 + 6, sizeof(vertex)); m.count = 0; }
+        for (int r = 0; r < b->rings; r++)
+            for (int s = 0; s < b->segs; s++) {
+                /* the cell's four corners, heights relative to sea level */
+                int s1 = (s + 1) % b->segs;
+                float h[4] = { world_grid_height(w, i, r, s) - b->sea_level, world_grid_height(w, i, r, s1) - b->sea_level,
+                               world_grid_height(w, i, r + 1, s1) - b->sea_level, world_grid_height(w, i, r + 1, s) - b->sea_level };
+                v3 d[4] = { world_grid_dir(w, i, r, s), world_grid_dir(w, i, r, s1), world_grid_dir(w, i, r + 1, s1), world_grid_dir(w, i, r + 1, s) };
+                v3 cross[4]; int nc = 0;
+                for (int e = 0; e < 4; e++) {
+                    int e1 = (e + 1) & 3;
+                    if ((h[e] > 0) == (h[e1] > 0)) continue;
+                    float t = h[e] / (h[e] - h[e1]);
+                    cross[nc++] = v3_norm(v3_lerp(d[e], d[e1], t));
+                }
+                if (nc < 2) continue;
+                if (pass == 0) { cap += 2; continue; }
+                /* one strip between the first two crossings, 1.4 wide across the contour */
+                v3 a = cross[0], c = cross[1];
+                v3 along = v3_sub(v3_scale(c, sea), v3_scale(a, sea));
+                v3 mid = v3_norm(v3_add(a, c));
+                v3 across = v3_norm(v3_cross(along, mid));   /* tangent, across the shoreline */
+                /* which way is land: the higher side */
+                v3 probe = v3_norm(v3_add(mid, v3_scale(across, 0.3f / sea)));
+                if (world_surface(w, i, probe) < sea) across = v3_scale(across, -1.0f);
+                v3 pts[4]; float alpha[4];
+                v3 ends[2] = { a, c };
+                for (int k = 0; k < 2; k++) {
+                    v3 land = v3_norm(v3_add(ends[k], v3_scale(across, 0.5f / sea)));
+                    v3 water = v3_norm(v3_add(ends[k], v3_scale(across, -0.9f / sea)));
+                    float hl = world_surface(w, i, land); if (hl < sea) hl = sea;
+                    pts[k * 2] = v3_scale(land, hl + 0.06f);
+                    pts[k * 2 + 1] = v3_scale(water, sea + 0.05f);
+                    alpha[k * 2] = 0.85f; alpha[k * 2 + 1] = 0.0f;   /* fades out to sea */
+                }
+                uint32_t cl = 0xF4F8FFD8u, cw = 0xF4F8FF00u;
+                (void)alpha;
+                mesh_tri_n(&m, pts[0], v3_norm(pts[0]), pts[1], v3_norm(pts[1]), pts[3], v3_norm(pts[3]), cl, cw, cw);
+                mesh_tri_n(&m, pts[0], v3_norm(pts[0]), pts[3], v3_norm(pts[3]), pts[2], v3_norm(pts[2]), cl, cw, cl);
+            }
+    }
+    return m;
+}
+
+/* A faint nebula on the star sphere: vertex alpha masks where the bands are, vertex colour
+   tints them purple or teal, the cloud texture gives them their wisps. Drawn additively. */
+static float nebula_radius(const void *c, v3 dir, int ring, int seg) { (void)dir; (void)ring; (void)seg; return ((const sphere_ctx *)c)->radius; }
+static uint32_t nebula_color(const void *c, v3 dir, int ring, int seg) {
+    const sphere_ctx *s = c; (void)ring; (void)seg;
+    float band = noise_fbm(v3_add(v3_scale(dir, 1.6f), v3_(3.1f, 0.7f, 5.2f)), 3, s->col);
+    float t = (band - 0.52f) / 0.14f;
+    if (t < 0) t = 0;
+    if (t > 1) t = 1;
+    float hue = noise_value(v3_scale(dir, 1.1f), s->col + 9u);
+    float r, g, b;
+    if (hue < 0.5f) { r = 150; g = 80; b = 210; }   /* violet */
+    else { r = 60; g = 170; b = 190; }               /* teal */
+    return ((uint32_t)r << 24) | ((uint32_t)g << 16) | ((uint32_t)b << 8) | (uint32_t)(t * 120);
+}
+mesh mesh_nebula(float radius, uint32_t seed) {
+    sphere_ctx c = { NULL, 0, seed, radius };
+    return sphere_grid(24, 36, 2.0f, nebula_radius, nebula_color, &c, 0);
 }
 
 mesh mesh_sphere(float radius, int rings, int segs, uint32_t col) {

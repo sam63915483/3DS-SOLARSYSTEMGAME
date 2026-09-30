@@ -27,7 +27,11 @@ static C3D_Light light;
 static C3D_LightLut lutPhong;
 
 static gpu_mesh bodies[BODY_COUNT], bodies_far[BODY_COUNT], props[BODY_COUNT][8], grass[BODY_COUNT][GRASS_CELLS];
-static gpu_mesh water[BODY_COUNT], shell_in[BODY_COUNT], clouds[BODY_COUNT];
+static gpu_mesh water[BODY_COUNT], ripple[BODY_COUNT], foam[BODY_COUNT], shell_in[BODY_COUNT], clouds[BODY_COUNT];
+static gpu_mesh nebula;
+static C3D_Tex nebula_tex; static int has_nebula_tex;
+#define DUST_VERTS (DUST_N * 6)
+static vertex *dust_vbo;
 static gpu_mesh astro_body, astro_arm, astro_leg, flame_outer, flame_inner, stars;
 static gpu_mesh rod_seg, bobber_top, bobber_bot, fish_mesh, gem;
 static gpu_mesh moon_oct[BODY_COUNT][8], moon_gems[BODY_COUNT];   /* carved moons, in octants */
@@ -109,7 +113,9 @@ void render_init(const world *w) {
         const body *b = &w->b[i];
         bodies[i] = upload(mesh_planet(w, i));
         bodies_far[i] = upload(mesh_planet_lod(w, i, 3));   /* a quarter of the triangles for the far view */
-        water[i] = upload(mesh_water(w, i, 0x2058B4C4u));   /* deep blue, alpha 196 */
+        water[i] = upload(mesh_water(w, i, 0));   /* tinted by depth, still */
+        ripple[i] = upload(mesh_water_ripple(w, i));   /* the drifting texture layer */
+        foam[i] = upload(mesh_foam(w, i));
         for (int o = 0; o < 8; o++) props[i][o] = upload(mesh_props(w, i, o));
         for (int g = 0; g < GRASS_CELLS; g++) grass[i][g] = upload(mesh_grass(w, i, g));
         has_detail[i] = !b->emissive && texture_make_detail(&detail[i], texture_kind_for(b->terrain), b->seed);
@@ -132,6 +138,9 @@ void render_init(const world *w) {
     flame_outer = upload(mesh_cone(8, 0xFF7A1AFF));   /* unit cones, scaled per jet */
     flame_inner = upload(mesh_cone(8, 0xFFE878FF));
     stars = upload(mesh_stars(360, STAR_RADIUS, 14.0f, 20260929u));
+    nebula = upload(mesh_nebula(STAR_RADIUS * 0.97f, 20261001u));
+    has_nebula_tex = texture_make_detail(&nebula_tex, DETAIL_CLOUDS, 5u);
+    dust_vbo = linearAlloc(DUST_VERTS * sizeof(vertex));
 
     /* fishing tackle */
     rod_seg = upload(mesh_box(1, 1, 1, 0x6B4A2AFF));       /* unit box, scaled per segment */
@@ -372,6 +381,23 @@ static void draw_school(const school *s, const world *w) {
     }
 }
 
+/* Dust puffs: soft camera-facing quads; call in the blended pass. */
+static void draw_dust(const dust *du, const camera *c) {
+    int n = 0;
+    v3 right = v3_norm(v3_cross(c->view, c->view_up)), up = c->view_up, nrm = v3_scale(c->view, -1.0f);
+    for (int i = 0; i < DUST_N; i++) {
+        float size, a = dust_get(du, i, &size);
+        if (a < 0.02f) continue;
+        const dust_puff *q = &du->p[i];
+        u32 col = (q->col & 0xFFFFFF00u) | (u32)(a * 255);
+        v3 r = v3_scale(right, size * 0.5f), u = v3_scale(up, size * 0.5f);
+        v3 p0 = v3_sub(v3_sub(q->pos, r), u), p1 = v3_sub(v3_add(q->pos, r), u), p2 = v3_add(v3_add(q->pos, r), u), p3 = v3_add(v3_sub(q->pos, r), u);
+        put_v(&dust_vbo[n++], p0, nrm, col); put_v(&dust_vbo[n++], p1, nrm, col); put_v(&dust_vbo[n++], p2, nrm, col);
+        put_v(&dust_vbo[n++], p0, nrm, col); put_v(&dust_vbo[n++], p2, nrm, col); put_v(&dust_vbo[n++], p3, nrm, col);
+    }
+    draw_dynamic(dust_vbo, n, &mat_glow);
+}
+
 /* Fireflies: additive glowing specks; call in the blended pass. */
 static void draw_fireflies(const fireflies *ff, const world *w) {
     if (ff->body < 0) return;
@@ -465,7 +491,7 @@ static float sky_color(const world *w, const player *p, const camera *c, u32 *ou
     return k;
 }
 
-void render_scene(const world *w, const player *p, const camera *c, const fishing *f, const school *s, const fireflies *ff, float time) {
+void render_scene(const world *w, const player *p, const camera *c, const fishing *f, const school *s, const fireflies *ff, const dust *du, float time) {
     u32 sky;
     float skyk = sky_color(w, p, c, &sky);
     C3D_RenderTargetClear(top, C3D_CLEAR_ALL, sky, 0);
@@ -492,7 +518,13 @@ void render_scene(const world *w, const player *p, const camera *c, const fishin
         mat_stars.emission[0] = mat_stars.emission[1] = mat_stars.emission[2] = star_k > 1 ? 1 : star_k;
         mtx_translate(&model, c->pos);
         C3D_CullFace(GPU_CULL_NONE);
-        /* additive: a dimmed star can only brighten the sky behind it, never show as a dark speck */
+        /* the nebula first: its wisps (texture alpha times the band mask in the vertex alpha)
+           add faint colour to the black; then the stars, additive, so a dimmed star can only
+           brighten the sky behind it, never show as a dark speck */
+        if (has_nebula_tex) {
+            C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE, GPU_SRC_ALPHA, GPU_ONE);
+            draw_ex(&nebula, &model, &mat_stars, &nebula_tex, uMV);
+        }
         C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ONE, GPU_ONE, GPU_ONE);
         draw(&stars, &model, &mat_stars);
         C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
@@ -561,11 +593,19 @@ void render_scene(const world *w, const player *p, const camera *c, const fishin
     for (int i = 0; i < BODY_COUNT; i++) {
         if (!water[i].count) continue;
         mtx_translate(&model, w->b[i].pos);
+        draw(&water[i], &model, &mat_water);   /* the depth-tinted body of the sea, still */
         Mtx_RotateY(&model, time * 0.012f, true);
-        draw_ex(&water[i], &model, &mat_water, has_water_tex ? &water_tex : NULL, uMV);
+        draw_ex(&ripple[i], &model, &mat_water, has_water_tex ? &water_tex : NULL, uMV);   /* drifting ripples */
+        /* foam along the shore, breathing a little */
+        C3D_Material mat_foam = mat_glow;
+        float wash = 0.75f + 0.25f * sinf(time * 1.7f);
+        mat_foam.emission[0] = mat_foam.emission[1] = mat_foam.emission[2] = wash;
+        mtx_translate(&model, w->b[i].pos);
+        draw(&foam[i], &model, &mat_foam);
     }
     draw_fishing_soft(f, c);
     draw_fireflies(ff, w);
+    draw_dust(du, c);
 
     /* clouds: lit, textured alpha, drifting */
     for (int i = 0; i < BODY_COUNT; i++) {
@@ -645,6 +685,9 @@ void render_fini(void) {
     }
     if (has_water_tex) C3D_TexDelete(&water_tex);
     if (has_cloud_tex) C3D_TexDelete(&cloud_tex);
+    if (has_nebula_tex) C3D_TexDelete(&nebula_tex);
+    gpu_free(&nebula); linearFree(dust_vbo);
+    for (int i = 0; i < BODY_COUNT; i++) { gpu_free(&ripple[i]); gpu_free(&foam[i]); }
     gpu_free(&astro_body); gpu_free(&astro_arm); gpu_free(&astro_leg);
     gpu_free(&flame_outer); gpu_free(&flame_inner); gpu_free(&stars);
     gpu_free(&rod_seg); gpu_free(&bobber_top); gpu_free(&bobber_bot); gpu_free(&fish_mesh); gpu_free(&gem);

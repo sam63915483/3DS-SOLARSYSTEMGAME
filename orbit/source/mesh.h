@@ -23,6 +23,12 @@ typedef struct {
 mesh mesh_planet(const world *w, int i);
 /* Translucent sea surface for body i at its sea radius (indexed sphere). Empty if no sea. */
 mesh mesh_water(const world *w, int i, uint32_t col);
+/* The drifting ripple layer just above body i's sea (indexed, textured). Empty if no sea. */
+mesh mesh_water_ripple(const world *w, int i);
+/* Foam ribbon along body i's shoreline (triangle list, translucent). Empty if no sea. */
+mesh mesh_foam(const world *w, int i);
+/* Faint nebula bands on a sphere of the given radius, for additive drawing behind the stars. */
+mesh mesh_nebula(float radius, uint32_t seed);
 /* Plain indexed sphere of the given radius, radial normals, one colour, no texcoords. */
 mesh mesh_sphere(float radius, int rings, int segs, uint32_t col);
 /* The same with texture coordinates tiling `rep` times pole to pole (2 * rep around). */

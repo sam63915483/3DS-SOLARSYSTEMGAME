@@ -13,6 +13,7 @@
 #include "fishhud.h"
 #include "school.h"
 #include "fireflies.h"
+#include "dust.h"
 
 static float pad_axis(int v) {
     float a = v / 156.0f;
@@ -147,6 +148,8 @@ int main(void) {
     static fishing fish; fishing_init(&fish);
     static school sch; school_init(&sch);
     static fireflies ff; fireflies_init(&ff);
+    static dust du; dust_init(&du);
+    int was_grounded = 1; float jet_dust_t = 0;
 
     u64 last = osGetTime();
     float fps = 60;
@@ -200,7 +203,25 @@ int main(void) {
         if (cam.gyro) sensors_read(&cin.gyro_pitch, &cin.gyro_yaw, dt);
 
         world_update(&w, dt);
+        float fall = -v3_dot(p.vel, p.up);   /* how fast we are coming down, before contact zeroes it */
         player_update(&p, &w, &in, dt);
+        /* touchdown: dust flies and a hard landing jolts the view */
+        if (p.grounded && !was_grounded && fall > 2.5f) {
+            float k = (fall - 2.5f) / 14.0f;
+            if (k > 1) k = 1;
+            v3 feet = v3_sub(p.pos, v3_scale(p.up, PLAYER_HALF_HEIGHT));
+            dust_burst(&du, &w, p.dom, feet, p.up, 6 + (int)(k * 10), 2.0f + k * 4.0f, 0.5f + k * 0.6f);
+            if (k > 0.3f) camera_kick(&cam, k);
+        }
+        was_grounded = p.grounded;
+        /* jets blowing on the ground */
+        jet_dust_t -= dt;
+        if (!p.grounded && (p.jet_up || p.jet_fwd) && p.altitude < 4.0f && jet_dust_t <= 0) {
+            v3 ground = v3_sub(p.pos, v3_scale(p.up, PLAYER_HALF_HEIGHT + p.altitude));
+            dust_burst(&du, &w, p.dom, ground, p.up, 2, 2.5f, 0.6f);
+            jet_dust_t = 0.08f;
+        }
+        dust_update(&du, &w, dt);
         camera_update(&cam, &w, &p, &cin, dt);
         {
             fishing_input fin;
@@ -216,7 +237,7 @@ int main(void) {
         fireflies_update(&ff, &w, &p, dt);
 
         C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
-        render_scene(&w, &p, &cam, &fish, &sch, &ff, w.t);
+        render_scene(&w, &p, &cam, &fish, &sch, &ff, &du, w.t);
         C3D_LightEnvBind(NULL);
         C2D_Prepare();
         {

@@ -64,6 +64,22 @@ static void place(camera *c, const world *w, const player *p, float dt) {
     float s = c->fp * c->fp * (3.0f - 2.0f * c->fp);   /* smoothstep */
     c->pos = v3_lerp(tp_pos, fp_pos, s);
     c->target = v3_lerp(tp_target, fp_target, s);
+    /* a landing jolt: a quick decaying wobble of the eye */
+    if (c->shake > 0.001f) {
+        c->shake_t += dt;
+        v3 right = v3_norm(v3_cross(c->view, c->view_up));
+        float k = c->shake * 0.22f;
+        v3 off = v3_add(v3_scale(right, sinf(c->shake_t * 41.0f) * k), v3_scale(c->view_up, sinf(c->shake_t * 53.0f + 1.3f) * k * 0.7f));
+        c->pos = v3_add(c->pos, off);
+        c->target = v3_add(c->target, off);
+        c->shake *= 1.0f - 6.0f * dt;
+        if (c->shake < 0.001f) c->shake = 0;
+    }
+}
+
+void camera_kick(camera *c, float amount) {
+    if (amount > 1) amount = 1;
+    if (amount > c->shake) c->shake = amount;
 }
 
 void camera_toggle_view(camera *c) {
@@ -84,6 +100,7 @@ void camera_init(camera *c, const player *p) {
     c->first_person = 0;
     c->fp = 0;
     c->cam_back = 1;
+    c->shake = c->shake_t = 0;
     c->gyro = 0;
     c->was_grounded = player_on_foot(p);
     c->level_t = 0;

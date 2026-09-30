@@ -234,11 +234,16 @@ void player_update(player *p, const world *w, const player_input *in, float dt) 
         float dist = v3_len(d);
         if (dist > b->radius + b->amp + PLAYER_HALF_HEIGHT + GROUND_SNAP) continue;   /* nowhere near */
         if (b->caves.enabled) {   /* a carved moon: the field is the ground, caves and all */
-            if (moon_contact(p, w, i, jumped)) touching = 1;
             if (i == p->dom) {
-                p->in_cave = moon_depth(w, i, v3_sub(p->pos, b->pos)) > 1.0f;
-                p->in_core = v3_len(v3_sub(p->pos, b->pos)) < b->caves.core_r;
+                v3 rel = v3_sub(p->pos, b->pos);
+                p->in_cave = moon_depth(w, i, rel) > 1.0f;
+                /* the zero-g zone starts a few units before the cavern, with hysteresis so it
+                   cannot flicker at the edge; in it nothing counts as floor, you float in */
+                float zone = b->caves.core_r + (p->in_core ? CORE_ZONE + 2.0f : CORE_ZONE);
+                p->in_core = v3_len(rel) < zone;
             }
+            int floor = moon_contact(p, w, i, jumped);
+            if (floor && !(i == p->dom && p->in_core)) touching = 1;
             continue;
         }
         v3 n = v3_norm(d);

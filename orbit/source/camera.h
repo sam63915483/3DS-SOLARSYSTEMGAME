@@ -13,10 +13,12 @@ typedef struct {
     int first_person;   /* requested view */
     float fp;           /* 0 = third person, 1 = inside the head, eased between */
     float cam_back;     /* fraction of the third-person distance the caves allow, smoothed */
+    float shake, shake_t;   /* 0..1 kick from a hard landing, decays; and its clock */
     int gyro;           /* first-person gyro look (Majora's Mask style); only while first_person */
 } camera;
 
 void camera_toggle_view(camera *c);   /* leaving first person also switches gyro look off */
+void camera_kick(camera *c, float amount);   /* 0..1: a jolt that shakes the view briefly */
 void camera_toggle_gyro(camera *c);   /* no effect in third person */
 
 typedef struct {
