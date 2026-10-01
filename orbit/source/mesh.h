@@ -36,9 +36,9 @@ mesh mesh_sphere_uv(float radius, int rings, int segs, uint32_t col, float rep);
 /* Trees, rocks and shards on body i whose direction falls in the given octant
    (0..7, bits: x negative, y negative, z negative), relative to the body's centre. */
 mesh mesh_props(const world *w, int i, int octant);
-/* Grass tufts on body i in one of GRASS_CELLS lat/long cells; drawn double sided. */
+/* Grass tufts on body i, one mesh for each of GRASS_CELLS lat/long cells; drawn double sided. */
 #define GRASS_CELLS 32
-mesh mesh_grass(const world *w, int i, int cell);
+void mesh_grass_cells(const world *w, int i, mesh out[GRASS_CELLS]);
 /* Unit direction of the centre of a grass cell. */
 v3 mesh_grass_cell_dir(int cell);
 /* Axis-aligned box centred on the origin. */

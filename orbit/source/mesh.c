@@ -400,13 +400,18 @@ v3 mesh_grass_cell_dir(int cell) {
     return v3_(sinf(th) * cosf(ph), cosf(th), sinf(th) * sinf(ph));
 }
 
-mesh mesh_grass(const world *w, int bi, int cell) {
+void mesh_grass_cells(const world *w, int bi, mesh out[GRASS_CELLS]) {
     const body *b = &w->b[bi];
-    mesh m = { 0, 0, 0, 0 };
+    for (int c = 0; c < GRASS_CELLS; c++) { mesh e = { 0, 0, 0, 0 }; out[c] = e; }
     int total = b->terrain == TERRAIN_VERDANT ? 10000 : 0;   /* the planet has 4x the area; grass is drawn near the camera only */
-    if (!total) return m;
-    /* a cell holds at most a third of the tufts (the equator cells are the largest) */
-    m.v = calloc(total / 3 * 15 + 15, sizeof(vertex));
+    if (!total) return;
+    /* place every tuft once and sort them into cells; a cell keeps at most a third of the tufts
+       (the equator cells are the largest) */
+    int cap = total / 3;
+    v3 *dirs = malloc(sizeof(v3) * (size_t)total);
+    int *ks = malloc(sizeof(int) * (size_t)total);
+    uint8_t *cells = malloc((size_t)total);
+    int n = 0, per_cell[GRASS_CELLS] = { 0 };
     uint32_t seed = b->seed * 104729u + 5u;
     int placed = 0, guard = 0, k = 0;
     while (placed < total && guard++ < 200000) {
@@ -420,9 +425,17 @@ mesh mesh_grass(const world *w, int bi, int cell) {
         if (lf < 0.07f || lf > 0.55f) continue;   /* grassland only */
         if (world_near_house(w, bi, dir, 9.0f)) continue;   /* not through the floors */
         placed++;
-        if (grass_cell_of(dir) != cell) continue;
-        if (m.count + 15 > total / 3 * 15) break;
+        int c = grass_cell_of(dir);
+        if (per_cell[c] >= cap) continue;
+        per_cell[c]++;
+        dirs[n] = dir; ks[n] = k; cells[n] = (uint8_t)c; n++;
+    }
+    for (int c = 0; c < GRASS_CELLS; c++) out[c].v = calloc((size_t)per_cell[c] * 15 + 1, sizeof(vertex));
 
+    for (int t = 0; t < n; t++) {
+        mesh *m = &out[cells[t]];
+        v3 dir = dirs[t];
+        k = ks[t];
         v3 up = dir, t1 = v3_any_perp(up);
         t1 = v3_rotate(t1, up, noise_hashf(k, 3, 8, seed) * 6.2832f);
         v3 t2 = v3_cross(up, t1);
@@ -436,10 +449,10 @@ mesh mesh_grass(const world *w, int bi, int cell) {
             float h = (0.9f + noise_hashf(k, 12 + c, 8, seed) * 0.9f) * s;
             v3 foot = v3_add(base, v3_scale(side, 0.28f * s));
             v3 tip = v3_add(v3_add(foot, v3_scale(up, h)), v3_scale(lean, 0.45f * s));
-            emit_tri(&m, v3_sub(foot, v3_scale(lean, 0.22f * s)), v3_add(foot, v3_scale(lean, 0.22f * s)), tip, v3_sub(base, up), gc);
+            emit_tri(m, v3_sub(foot, v3_scale(lean, 0.22f * s)), v3_add(foot, v3_scale(lean, 0.22f * s)), tip, v3_sub(base, up), gc);
         }
     }
-    return m;
+    free(dirs); free(ks); free(cells);
 }
 
 /* ---- small shapes for the astronaut ---- */

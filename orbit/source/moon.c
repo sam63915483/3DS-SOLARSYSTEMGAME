@@ -257,18 +257,12 @@ static uint32_t vertex_colour(const world *w, int bi, v3 p, const gem *g, int ng
 
 typedef struct { v3 p, n; uint32_t col; } snvert;
 
-void moon_build(const world *w, int bi, mesh out[8]) {
-    const body *b = &w->b[bi];
-    const cavenet *c = &b->caves;
-    for (int o = 0; o < 8; o++) { mesh e = { 0, 0, 0, 0 }; out[o] = e; }
-    if (!c->enabled) return;
-    float cell = c->cell;
-    float E = b->radius + b->amp + 2 * cell;
-    int N = (int)(2 * E / cell) + 2;              /* corners per axis */
-    float outer = b->radius + b->amp + cell;      /* beyond this is air for sure */
+/* The primitives binned on a coarse grid over the cube [-E, E]^3, so a point only tests the
+   ones nearby. */
+#define BIN 10.0f
+typedef struct { float E; int NB; int *count, *start, *items; } bins;
 
-    /* bin the primitives on a coarse grid so each corner only tests the ones nearby */
-    const float BIN = 10.0f;
+static void bins_build(const cavenet *c, float E, bins *bn) {
     int NB = (int)(2 * E / BIN) + 1;
     int nprim = c->nseg + c->nblob;
     int *bin_count = calloc((size_t)NB * NB * NB, sizeof(int));
@@ -302,6 +296,42 @@ void moon_build(const world *w, int bi, mesh out[8]) {
                     }
         }
     }
+    bn->E = E; bn->NB = NB; bn->count = bin_count; bn->start = bin_start; bn->items = bin_items;
+}
+
+static void bins_free(bins *bn) { free(bn->count); free(bn->start); free(bn->items); }
+
+/* Exactly moon_field: a primitive left out of p's bin is more than 6.5 past its radius from
+   p, and the field ignores every cave that far away. Outside the binned cube it tests them all. */
+static float bins_field(const world *w, int bi, const bins *bn, v3 p) {
+    float E = bn->E;
+    if (p.x + E < 0 || p.y + E < 0 || p.z + E < 0) return moon_field(w, bi, p);
+    int bx = (int)((p.x + E) / BIN), by = (int)((p.y + E) / BIN), bz = (int)((p.z + E) / BIN);
+    int NB = bn->NB;
+    if (bx >= NB || by >= NB || bz >= NB) return moon_field(w, bi, p);
+    int bidx = (bx * NB + by) * NB + bz;
+    return field(w, bi, p, bn->items + bn->start[bidx], bn->count[bidx]);
+}
+
+/* Exactly moon_grad, through the bins. */
+static v3 bins_grad(const world *w, int bi, const bins *bn, v3 rel) {
+    const float e = 0.2f;
+    return v3_((bins_field(w, bi, bn, v3_add(rel, v3_(e, 0, 0))) - bins_field(w, bi, bn, v3_sub(rel, v3_(e, 0, 0)))) / (2 * e),
+               (bins_field(w, bi, bn, v3_add(rel, v3_(0, e, 0))) - bins_field(w, bi, bn, v3_sub(rel, v3_(0, e, 0)))) / (2 * e),
+               (bins_field(w, bi, bn, v3_add(rel, v3_(0, 0, e))) - bins_field(w, bi, bn, v3_sub(rel, v3_(0, 0, e)))) / (2 * e));
+}
+
+void moon_build(const world *w, int bi, mesh out[8]) {
+    const body *b = &w->b[bi];
+    const cavenet *c = &b->caves;
+    for (int o = 0; o < 8; o++) { mesh e = { 0, 0, 0, 0 }; out[o] = e; }
+    if (!c->enabled) return;
+    float cell = c->cell;
+    float E = b->radius + b->amp + 2 * cell;
+    int N = (int)(2 * E / cell) + 2;              /* corners per axis */
+    float outer = b->radius + b->amp + cell;      /* beyond this is air for sure */
+    bins bn;
+    bins_build(c, E, &bn);
 
     /* the field at every corner */
     float *f = malloc(sizeof(float) * (size_t)N * N * N);
@@ -312,14 +342,8 @@ void moon_build(const world *w, int bi, mesh out[8]) {
                 float R = v3_len(p);
                 float *fp = &f[((size_t)i * N + j) * N + k];
                 if (R > outer) { *fp = outer - R; continue; }
-                int bx = (int)((p.x + E) / BIN), by = (int)((p.y + E) / BIN), bz = (int)((p.z + E) / BIN);
-                if (bx >= NB) bx = NB - 1;
-                if (by >= NB) by = NB - 1;
-                if (bz >= NB) bz = NB - 1;
-                int bidx = (bx * NB + by) * NB + bz;
-                *fp = field(w, bi, p, bin_items + bin_start[bidx], bin_count[bidx]);
+                *fp = bins_field(w, bi, &bn, p);
             }
-    free(bin_count); free(bin_start); free(bin_items);
 
     /* one vertex per cell the surface passes through, at the mean of its edge crossings */
     int NC = N - 1;
@@ -351,11 +375,12 @@ void moon_build(const world *w, int bi, mesh out[8]) {
                 v3 p = v3_add(v3_scale(sum, cell / cnt), v3_(-E, -E, -E));
                 if (nv == cap) { cap *= 2; verts = realloc(verts, sizeof(snvert) * (size_t)cap); }
                 verts[nv].p = p;
-                v3 gr = moon_grad(w, bi, p);
+                v3 gr = bins_grad(w, bi, &bn, p);
                 verts[nv].n = v3_len(gr) > 1e-5f ? v3_norm(v3_scale(gr, -1.0f)) : v3_norm(p);   /* out of the rock */
                 verts[nv].col = vertex_colour(w, bi, p, g, ng);
                 *cv = nv++;
             }
+    bins_free(&bn);
 
     /* a quad for every grid edge the surface crosses, joining the four cells around it. Each
        octant gets an indexed mesh: first find which vertices each octant uses and count its

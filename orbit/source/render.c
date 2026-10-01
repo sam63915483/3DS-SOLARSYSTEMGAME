@@ -119,7 +119,9 @@ void render_init(const world *w) {
         ripple[i] = upload(mesh_water_ripple(w, i));   /* the drifting texture layer */
         foam[i] = upload(mesh_foam(w, i));
         for (int o = 0; o < 8; o++) props[i][o] = upload(mesh_props(w, i, o));
-        for (int g = 0; g < GRASS_CELLS; g++) grass[i][g] = upload(mesh_grass(w, i, g));
+        mesh gm[GRASS_CELLS];
+        mesh_grass_cells(w, i, gm);
+        for (int g = 0; g < GRASS_CELLS; g++) grass[i][g] = upload(gm[g]);
         has_detail[i] = !b->emissive && texture_make_detail(&detail[i], texture_kind_for(b->terrain), b->seed);
         gpu_mesh none = { 0, 0, 0, 0 };
         shell_in[i] = clouds[i] = none;
