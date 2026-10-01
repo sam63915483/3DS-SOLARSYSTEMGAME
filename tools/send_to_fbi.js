@@ -35,12 +35,15 @@ server.listen(8080, () => {
   const payload = Buffer.from(url + '\n', 'utf8');
   const header = Buffer.alloc(4);
   header.writeUInt32BE(payload.length, 0);
+  let sent = false;
   const sock = net.connect(5000, ip, () => {
     sock.write(Buffer.concat([header, payload]));
     sock.end();
+    sent = true;
     console.log(`sent the URL to the 3DS at ${ip}. Accept the install on the console.`);
   });
   sock.on('error', err => {
+    if (sent) return;   // FBI resets the socket once it has the list; that's normal
     console.error(`could not reach FBI at ${ip}:5000 (${err.message}). Is "Receive URLs over the network" open?`);
     process.exit(1);
   });
